@@ -1,0 +1,105 @@
+{% extends 'purchasing/base.html' %}
+{% block title %}{% if req %}Edit request{% else %}New request{% endif %}{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">{% if req %}Edit request #{{ req.pk }}{% else %}New purchase request{% endif %}</h1>
+{% if req %}<div class="alert alert-info">Saving resubmits this request. Anything over £200 goes back to Shijing for approval.</div>{% endif %}
+
+<form method="post" enctype="multipart/form-data">{% csrf_token %}
+{% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card shadow-sm mb-4"><div class="card-body">
+      <h2 class="h6 text-uppercase text-muted mb-3">The item</h2>
+      {% include 'purchasing/_field.html' with field=form.item_name %}
+      {% include 'purchasing/_field.html' with field=form.spec %}
+      <div class="row">
+        <div class="col-md-6">{% include 'purchasing/_field.html' with field=form.vendor %}</div>
+        <div class="col-md-6">{% include 'purchasing/_field.html' with field=form.purchase_link %}</div>
+      </div>
+      <div class="row">
+        <div class="col-4">{% include 'purchasing/_field.html' with field=form.quantity %}</div>
+        <div class="col-4">{% include 'purchasing/_field.html' with field=form.unit_price %}</div>
+        <div class="col-4">{% include 'purchasing/_field.html' with field=form.shipping %}</div>
+      </div>
+    </div></div>
+
+    <div class="card shadow-sm mb-4"><div class="card-body">
+      <h2 class="h6 text-uppercase text-muted mb-3">Funding</h2>
+      <div class="row">
+        <div class="col-md-6">{% include 'purchasing/_field.html' with field=form.grant_code %}</div>
+        <div class="col-md-6">{% include 'purchasing/_field.html' with field=form.project %}</div>
+      </div>
+      <div class="row">
+        <div class="col-md-6">{% include 'purchasing/_field.html' with field=form.needed_by %}</div>
+      </div>
+      {% include 'purchasing/_field.html' with field=form.notes %}
+    </div></div>
+
+    <div class="card shadow-sm mb-4"><div class="card-body">
+      <h2 class="h6 text-uppercase text-muted mb-3">Attachments</h2>
+      {% if req and req.attachments.exists %}
+      <p class="small">Already attached: {% for a in req.attachments.all %}<a href="{% url 'attachment' a.pk %}">{{ a.get_kind_display }} – {{ a.filename }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+      {% endif %}
+      <div id="quote-field">{% include 'purchasing/_field.html' with field=form.quote %}</div>
+      {% include 'purchasing/_field.html' with field=form.spec_file %}
+    </div></div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card shadow-sm sticky-lg-top" style="top: 1rem">
+      <div class="card-body">
+        <div class="text-muted small">Total</div>
+        <div class="display-6 fw-semibold mb-2" id="total">£0.00</div>
+        <div id="tier-guide">
+          {% for t in tiers %}
+          <div class="tier-guide d-none" data-tier="{{ t.number }}" data-limit="{{ t.upper_limit|default:'' }}"
+               data-needs-quote="{{ t.needs_quote|yesno:'1,0' }}">
+            <span class="tier tier-{{ t.number }} fw-semibold">{{ t.label }} purchase</span> <span class="text-muted">({{ t.range_label }})</span>
+            <ol class="small ps-3 mt-2">{% for s in t.steps %}<li>{{ s }}</li>{% endfor %}</ol>
+          </div>
+          {% endfor %}
+        </div>
+
+        <div id="method-field" class="border-top pt-3">
+          {% include 'purchasing/_field.html' with field=form.method %}
+          <div id="receipt-field">{% include 'purchasing/_field.html' with field=form.receipt %}</div>
+        </div>
+
+        <button class="btn btn-primary w-100 mt-2" id="submit-btn">Submit request</button>
+      </div>
+    </div>
+  </div>
+</div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const num = (el) => parseFloat(el.value) || 0;
+  const qty = $("id_quantity"), unit = $("id_unit_price"), ship = $("id_shipping");
+  const guides = [...document.querySelectorAll(".tier-guide")];
+  const methods = [...document.querySelectorAll("input[name=method]")];
+
+  function update() {
+    const total = Math.round((num(qty) * num(unit) + num(ship)) * 100) / 100;
+    $("total").textContent = "£" + total.toLocaleString("en-GB", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const tier = guides.find((g) => g.dataset.limit === "" || total <= parseFloat(g.dataset.limit));
+    guides.forEach((g) => g.classList.toggle("d-none", g !== tier));
+
+    const small = tier.dataset.tier === "1";
+    $("method-field").classList.toggle("d-none", !small);
+    if (!small) methods.forEach((m) => (m.checked = m.value === "purchase_form"));
+    const method = (methods.find((m) => m.checked) || {}).value;
+    $("receipt-field").classList.toggle("d-none", !small || method === "purchase_form");
+    $("quote-field").querySelector("label").textContent = tier.dataset.needsQuote === "1" ? "Quote (required)" : "Quote";
+    $("submit-btn").textContent = small
+      ? (method === "store" ? "Log purchase" : method === "reimbursement" ? "Claim reimbursement" : "Send to purchaser")
+      : "Send to Shijing for approval";
+  }
+  [qty, unit, ship, ...methods].forEach((el) => el.addEventListener("input", update));
+  update();
+})();
+</script>
+{% endblock %}

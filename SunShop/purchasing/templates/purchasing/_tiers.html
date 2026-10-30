@@ -1,0 +1,16 @@
+<div class="row g-3">
+{% for t in tiers %}
+  <div class="col-md-6 col-xl-3">
+    <div class="card h-100 tier-card tier-card-{{ t.number }}" data-tier="{{ t.number }}">
+      <div class="card-body">
+        <div class="small text-uppercase fw-semibold tier tier-{{ t.number }} mb-1">{{ t.label }}</div>
+        <div class="h5">{{ t.range_label }}</div>
+        <ol class="small ps-3 mb-2">{% for s in t.steps %}<li>{{ s }}</li>{% endfor %}</ol>
+        <div class="small text-muted">
+          {% if t.needs_pi %}PI approval{% else %}No approval needed{% endif %}{% if t.needs_quote %} · quote required{% endif %}{% if t.needs_derek %} · Derek{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+{% endfor %}
+</div>

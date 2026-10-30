@@ -1,0 +1,22 @@
+{% extends 'purchasing/base.html' %}
+{% block title %}Log in{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-sm-8 col-md-5 col-lg-4">
+    <div class="card shadow-sm mt-5">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-3">Log in to SunShop</h1>
+        {% if form.errors %}<div class="alert alert-danger">Username or password didn't match.</div>{% endif %}
+        <form method="post">{% csrf_token %}
+          <div class="mb-3"><label class="form-label" for="id_username">Username</label>
+            <input class="form-control" name="username" id="id_username" autofocus required></div>
+          <div class="mb-3"><label class="form-label" for="id_password">Password</label>
+            <input class="form-control" type="password" name="password" id="id_password" required></div>
+          <input type="hidden" name="next" value="{{ next }}">
+          <button class="btn btn-primary w-100">Log in</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

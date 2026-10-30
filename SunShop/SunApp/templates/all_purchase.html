@@ -1,0 +1,53 @@
+{% extends 'base.html' %} {% block title %} Sun Shop Home Page {% endblock %}
+{% block content %}
+
+<h1>All Purchases</h1>
+<form method="GET" action="" class="row g-2 mb-3">
+  <div class="col-md-10">
+    <input type="text" name="q" value="{{ request.GET.q }}" class="form-control" placeholder="Search items, vendors, projects...">
+  </div>
+  <div class="col-md-2">
+    <button type="submit" class="btn btn-primary w-100">Search</button>
+  </div>
+</form>
+
+    <table class="table table-striped table-hover table-bordered">
+        <thead class="table-dark">
+          <tr>
+            <th scope="col">ID</th>
+            <th scope="col">Date Requested</th>
+            <th scope="col">Status</th>
+            <th scope="col">Requested by</th>
+            <th scope="col">Item</th>
+            <th scope="col">Vendor</th>
+            <th scope="col">Quantity</th>
+            <th scope="col">Price</th>
+            <th scope="col">Project</th>
+            <th scope="col">Work Tag</th>
+          </tr>
+        </thead>
+        <tbody>
+            {% if purchase_requests %}
+                {% for purchase_request in purchase_requests %}
+                <tr>
+                    <td><a href="{% url 'request_record' purchase_request.id %}">{{ purchase_request.id }}</a></td>
+                    <td>{{purchase_request.date_requested}}</td>
+                    <td>{{purchase_request.status}}</td>
+                    <td>{{purchase_request.requested_by}}</td>
+                    <td>{{purchase_request.item_name}}
+                    <td>{{purchase_request.vendor}}</td>
+                    <td>{{purchase_request.quantity}}</td>
+                    <td>{{purchase_request.price}}</td>
+                    <td>{{purchase_request.project}}</td>
+                    <td>{{purchase_request.worktag}}</td>
+                    <br>
+                </tr>
+                {% endfor %}
+            {% endif %}
+
+        </tbody>
+      </table>
+      <br>
+      <br>
+{% endblock %}
+

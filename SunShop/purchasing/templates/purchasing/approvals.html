@@ -1,0 +1,38 @@
+{% extends 'purchasing/base.html' %}
+{% block title %}Approvals{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Approvals</h1>
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold">Waiting for your approval</div>
+  {% if pending %}
+  <div class="list-group list-group-flush">
+    {% for r in pending %}
+    <div class="list-group-item py-3">
+      <div class="d-flex flex-wrap justify-content-between gap-2">
+        <div>
+          <a href="{{ r.get_absolute_url }}" class="fw-semibold text-decoration-none">#{{ r.pk }} {{ r.item_name }}</a>
+          <span class="tier tier-{{ r.tier }} small ms-1">{{ r.tier_info.label }}</span>
+          <div class="small text-muted">{{ r.requester.get_full_name|default:r.requester.username }} · {{ r.vendor }} · {{ r.grant_code }} · {{ r.created_at|timesince }} ago
+            {% if r.attachments.exists %}· 📎 {{ r.attachments.count }}{% endif %}</div>
+          <div class="small mt-1">{{ r.spec|truncatewords:30 }}</div>
+        </div>
+        <div class="text-end">
+          <div class="fs-5 fw-semibold">£{{ r.total|floatformat:"2g" }}</div>
+          <form method="post" action="{% url 'request_action' r.pk 'approve' %}" class="d-inline">{% csrf_token %}
+            <input type="hidden" name="next" value="{% url 'approvals' %}">
+            <button class="btn btn-sm btn-success">Approve</button>
+          </form>
+          <a href="{{ r.get_absolute_url }}" class="btn btn-sm btn-outline-secondary">Review</a>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}<p class="text-muted p-3 mb-0">All caught up 🎉</p>{% endif %}
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-header bg-white fw-semibold">Your recent decisions</div>
+  {% include 'purchasing/_request_table.html' with requests=decided empty="No decisions yet." %}
+</div>
+{% endblock %}

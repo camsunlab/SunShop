@@ -1,0 +1,13 @@
+<div class="mb-3">
+  {% if field.widget_type == 'radioselect' %}
+    <div class="form-label">{{ field.label }}</div>
+    {% for radio in field %}<div class="form-check">{{ radio.tag }}<label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label></div>{% endfor %}
+  {% elif field.widget_type == 'checkbox' %}
+    <div class="form-check">{{ field }}<label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label></div>
+  {% else %}
+    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %} <span class="text-danger">*</span>{% endif %}</label>
+    {{ field }}
+  {% endif %}
+  {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+  {% for e in field.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+</div>

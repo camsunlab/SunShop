@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Pending Todos</h1>
+    <!-- <ul>
+        {% for List in pending %}
+            <li>
+                {{ List.title }}: {% if pending.completed %}Completed{% else %}Pending{% endif %}
+            </li>
+        {% endfor %}
+    </ul> -->
+    <!-- <form method="POST">
+        {% csrf_token %}
+        <input type="text" name="todo" placeholder="Enter a todo item" />
+        <button type="submit">Add</button> -->
+{% endif %}
+{% endblock %}

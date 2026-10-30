@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block content %}
+
+{% if user.is_authenticated %}
+    <h1>Welcome, {{ user.username }}</h1>
+{% else %}
+    <div class = "col-md-6 offset-md-3">
+        <h1>Login</h1>
+        <br>
+        <form method="POST" action="{% url 'login' %}">
+            {% csrf_token %}
+            <form>
+                <div class="mb-3">
+                  <label  class="form-label">Username</label>
+                  <input type="text" class="form-control"  name = "username", placeholder="Enter your username" required>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Password</label>
+                  <input type="password" class="form-control", name = "password", placeholder="Enter your password" required>
+                </div>
+                <!-- <div class="mb-3 form-check">
+                  <input type="checkbox" class="form-check-input" id="exampleCheck1">
+                  <label class="form-check-label" for="exampleCheck1">Check me out</label>
+                </div> -->
+                <br>
+                <button type="submit" class="btn btn-primary">Login</button>
+              </form>
+        </from>
+
+    </div>
+
+    <ul>
+        {% for todo in todos %}
+            <li>
+                {{ todo.title }}: {% if todo.completed %}Completed{% else %}Pending{% endif %}
+            </li>
+        {% endfor %}
+    </ul>
+    <!-- <form method="POST">
+        {% csrf_token %}
+        <input type="text" name="todo" placeholder="Enter a todo item" />
+        <button type="submit">Add</button> -->
+{% endif %}
+{% endblock %}

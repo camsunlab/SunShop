@@ -1,0 +1,103 @@
+{% extends 'purchasing/base.html' %}
+{% block title %}#{{ req.pk }} {{ req.item_name }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <div class="text-muted small">Request #{{ req.pk }} · submitted {{ req.created_at|date:"j M Y" }} by {{ req.requester.get_full_name|default:req.requester.username }}</div>
+    <h1 class="h3 mb-1">{{ req.item_name }}</h1>
+    <span class="badge fs-6 text-bg-{{ req.status_colour }}">{{ req.get_status_display }}</span>
+    <span class="tier tier-{{ tier.number }} ms-2 fw-semibold">{{ tier.label }} purchase · {{ tier.range_label }}</span>
+  </div>
+  <div class="d-flex gap-2 d-print-none">
+    {% if can_edit %}<a href="{% url 'request_edit' req.pk %}" class="btn btn-outline-primary">Edit</a>{% endif %}
+    <button class="btn btn-outline-secondary" onclick="window.print()">Print</button>
+  </div>
+</div>
+
+{% include 'purchasing/_progress.html' %}
+
+<div class="row g-4">
+  <div class="col-lg-7">
+
+    {% if req.status == 'changes_requested' or req.status == 'rejected' %}
+    <div class="alert alert-{% if req.status == 'rejected' %}danger{% else %}warning{% endif %}">
+      <strong>{{ req.pi_decision_by.get_full_name|default:req.pi_decision_by.username }}:</strong> {{ req.pi_comment|linebreaksbr }}
+      {% if can_edit %}<div class="mt-2"><a href="{% url 'request_edit' req.pk %}" class="btn btn-sm btn-warning">Edit and resubmit</a></div>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if derek_mailto %}
+    <div class="alert alert-info">
+      <strong>Next step: request the purchase from Derek.</strong>
+      {% if req.derek_emailed_at %}
+        Emailed on {{ req.derek_emailed_at|date:"j M Y" }} – waiting for Derek's reply. The purchaser will record his decision here.
+      {% else %}
+        Shijing has approved this. Email Derek with the purchaser cc'd – the button below opens a pre-filled email
+        (attach the quote), then click <em>I've emailed Derek</em>.
+        <div class="mt-2"><a href="{{ derek_mailto }}" class="btn btn-sm btn-primary">Open email to Derek</a></div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-4"><div class="card-body">
+      <dl class="row mb-0">
+        <dt class="col-sm-4">Total</dt><dd class="col-sm-8 fs-5 fw-semibold">£{{ req.total|floatformat:"2g" }}
+          <div class="small text-muted fw-normal">{{ req.quantity }} × £{{ req.unit_price|floatformat:"2g" }}{% if req.shipping %} + £{{ req.shipping|floatformat:"2g" }} shipping/other{% endif %}</div></dd>
+        <dt class="col-sm-4">Vendor</dt><dd class="col-sm-8">{{ req.vendor }}{% if req.purchase_link %} · <a href="{{ req.purchase_link }}" target="_blank" rel="noopener">link</a>{% endif %}</dd>
+        <dt class="col-sm-4">Grant code</dt><dd class="col-sm-8">{{ req.grant_code }}</dd>
+        {% if req.project %}<dt class="col-sm-4">Project</dt><dd class="col-sm-8">{{ req.project }}</dd>{% endif %}
+        <dt class="col-sm-4">How</dt><dd class="col-sm-8">{{ req.get_method_display }}</dd>
+        {% if req.needed_by %}<dt class="col-sm-4">Needed by</dt><dd class="col-sm-8">{{ req.needed_by|date:"j M Y" }}</dd>{% endif %}
+        <dt class="col-sm-4">Spec</dt><dd class="col-sm-8">{{ req.spec|linebreaksbr }}</dd>
+        {% if req.notes %}<dt class="col-sm-4">Notes</dt><dd class="col-sm-8">{{ req.notes|linebreaksbr }}</dd>{% endif %}
+        {% if req.pi_approved %}<dt class="col-sm-4">PI approval</dt><dd class="col-sm-8">✓ {{ req.pi_decision_by.get_full_name|default:req.pi_decision_by.username }}, {{ req.pi_decision_at|date:"j M Y H:i" }}{% if req.pi_comment %}<div class="small text-muted">“{{ req.pi_comment }}”</div>{% endif %}</dd>{% endif %}
+        {% if req.ordered_at %}<dt class="col-sm-4">Ordered</dt><dd class="col-sm-8">{{ req.ordered_at|date:"j M Y" }} by {{ req.purchaser.get_full_name|default:req.purchaser.username }}{% if req.order_reference %} · ref {{ req.order_reference }}{% endif %}</dd>{% endif %}
+        {% if req.actual_price is not None %}<dt class="col-sm-4">Actual price</dt><dd class="col-sm-8">£{{ req.actual_price|floatformat:"2g" }}{% if req.actual_price != req.total %} <span class="small text-muted">(requested £{{ req.total|floatformat:"2g" }})</span>{% endif %}</dd>{% endif %}
+        {% if req.replacement_purchased %}<dt class="col-sm-4">Replacement</dt><dd class="col-sm-8"><span class="badge text-bg-warning">Replacement purchased instead</span><div>{{ req.replacement_details|linebreaksbr }}</div></dd>{% endif %}
+        {% if req.received_at %}<dt class="col-sm-4">Received</dt><dd class="col-sm-8">{{ req.received_at|date:"j M Y" }} by {{ req.received_by.get_full_name|default:req.received_by.username }}</dd>{% endif %}
+        <dt class="col-sm-4">Attachments</dt>
+        <dd class="col-sm-8 mb-0">
+          {% for a in attachments %}<div><a href="{% url 'attachment' a.pk %}">{{ a.filename }}</a> <span class="small text-muted">{{ a.get_kind_display }}</span></div>
+          {% empty %}<span class="text-muted">None</span>{% endfor %}
+        </dd>
+      </dl>
+    </div></div>
+
+    <h2 class="h5">Activity &amp; discussion</h2>
+    <ul class="list-unstyled timeline mb-3">
+      {% for e in events %}
+      <li class="{% if e.action == 'comment' %}comment{% endif %}">
+        <div class="small"><strong>{{ e.actor.get_full_name|default:e.actor.username }}</strong>
+          {% if e.action != 'comment' %}<span class="text-muted">{{ e.action }}</span>{% endif %}
+          <span class="text-muted">· {{ e.created_at|date:"j M Y H:i" }}</span></div>
+        {% if e.message %}<div>{{ e.message|linebreaksbr }}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    <form method="post" class="d-print-none">{% csrf_token %}
+      {{ comment_form.message }}
+      <button class="btn btn-outline-primary btn-sm mt-2">Post comment</button>
+    </form>
+  </div>
+
+  <div class="col-lg-5 d-print-none">
+    {% if actions %}
+    <div class="card shadow-sm">
+      <div class="card-header bg-white fw-semibold">Actions</div>
+      <div class="card-body">
+        {% for a in actions %}
+        <details class="action mb-2" {% if forloop.first and a.style == 'success' %}open{% endif %}>
+          <summary class="btn btn-{{ a.style }} w-100 text-start">{{ a.label }}</summary>
+          <form method="post" action="{% url 'request_action' req.pk a.name %}" enctype="multipart/form-data" class="border rounded p-3 mt-2">{% csrf_token %}
+            {% with form=a.form %}{% include 'purchasing/_fields.html' %}{% endwith %}
+            {% if a.name == 'request_changes' or a.name == 'reject' %}<div class="form-text mb-2">A comment is required.</div>{% endif %}
+            <button class="btn btn-{{ a.style }}">Confirm: {{ a.label|lower }}</button>
+          </form>
+        </details>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

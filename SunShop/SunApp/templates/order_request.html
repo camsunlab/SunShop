@@ -1,0 +1,26 @@
+{% extends 'base.html' %}{% block title %}Order Request #{{ purchase_request.id }}{% endblock %}
+
+{% block content %}
+<h2>Order Purchase Request #{{ purchase_request.id }}</h2>
+
+<h4>Request Details:</h4>
+<ul>
+  <li><strong>Item:</strong> {{ purchase_request.item_name }}</li>
+  <li><strong>Requested by:</strong> {{ purchase_request.requested_by }}</li>
+  <li><strong>Vendor:</strong> {{ purchase_request.vendor }}</li>
+  <li><strong>Quantity:</strong> {{ purchase_request.quantity }}</li>
+  <li><strong>Price:</strong> {{ purchase_request.price }}</li>
+  <li><strong>WorkTag:</strong> {{ purchase_request.worktag }}</li>
+  <li><strong>Link:</strong> <a href="{{ purchase_request.purchase_link }}" target="_blank">Product Page</a></li>
+  <li><strong>Project:</strong> {{ purchase_request.project }}</li>
+</ul>
+
+<hr>
+
+<h4>Fill in purchasing details:</h4>
+<form method="POST">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <button type="submit" class="btn btn-success">Submit Order</button>
+</form>
+{% endblock %}
