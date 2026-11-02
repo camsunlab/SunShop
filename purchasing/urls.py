@@ -9,6 +9,7 @@ urlpatterns = [
     path("requests/new/", views.request_new, name="request_new"),
     path("requests/<int:pk>/", views.request_detail, name="request_detail"),
     path("requests/<int:pk>/edit/", views.request_edit, name="request_edit"),
+    path("requests/<int:pk>/upload/", views.request_upload, name="request_upload"),
     path("requests/<int:pk>/<str:action>/", views.request_action, name="request_action"),
     path("approvals/", views.approvals, name="approvals"),
     path("purchasing/", views.purchasing_queue, name="purchasing_queue"),

@@ -44,6 +44,23 @@ class WorkflowTests(TestCase):
         workflow.submit(req, self.student)
         return req
 
+    def test_add_quote_to_finished_request(self):
+        """Quotes can be added later to any request (e.g. imported history), by staff but not other students."""
+        req = self.make("6000")
+        req.status = Status.RECEIVED
+        req.save()
+        url = reverse("request_upload", args=[req.pk])
+        self.client.force_login(self.student)
+        self.assertContains(self.client.get(req.get_absolute_url()), "No quote uploaded yet")
+        other = User.objects.create_user("other", "o@lab.ac.uk", "pw")
+        self.client.force_login(other)
+        self.assertEqual(self.client.post(url, {"upload-kind": "quote", "upload-file": SimpleUploadedFile("q.pdf", b"%PDF")}).status_code, 403)
+        self.client.force_login(self.buyer)
+        self.client.post(url, {"upload-kind": "quote", "upload-file": SimpleUploadedFile("q.pdf", b"%PDF")})
+        self.assertEqual(req.attachments.get().kind, "quote")
+        self.assertTrue(req.events.filter(action="file added").exists())
+        self.assertNotContains(self.client.get(req.get_absolute_url()), "No quote uploaded yet")
+
     def test_small_purchase_skips_pi(self):
         self.assertEqual(self.make("50").status, Status.TO_ORDER)
         self.assertEqual(self.make("50", method=Method.STORE).status, Status.BOUGHT_AT_STORE)

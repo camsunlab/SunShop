@@ -13,7 +13,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from . import workflow
-from .forms import (CommentForm, NoteForm, OrderedForm, PurchaseRequestForm,
+from .forms import (AttachmentForm, CommentForm, NoteForm, OrderedForm, PurchaseRequestForm,
                     ReceivedForm, SignUpForm)
 from .models import Attachment, OPEN_STATUSES, PurchaseRequest, Status
 from .rules import TIERS
@@ -36,6 +36,11 @@ def attach(req, user, kind, file):
 
 
 def can_view(req, user):
+    return req.requester_id == user.id or workflow.is_pi(user) or workflow.is_purchaser(user) or user.is_staff
+
+
+def can_upload(req, user):
+    """The requester, PIs, the purchaser and admins can add files to a request."""
     return req.requester_id == user.id or workflow.is_pi(user) or workflow.is_purchaser(user) or user.is_staff
 
 
@@ -119,8 +124,28 @@ def request_detail(request, pk):
         "can_edit": workflow.can_edit(req, request.user),
         "events": req.events.select_related("actor"),
         "attachments": req.attachments.all(),
+        "missing_quote": req.tier_info.needs_quote and not req.attachments.filter(kind=Attachment.Kind.QUOTE).exists(),
+        "upload_form": AttachmentForm(prefix="upload") if can_upload(req, request.user) else None,
         "comment_form": comment_form,
     })
+
+
+@login_required
+@require_POST
+def request_upload(request, pk):
+    req = get_request_for(request.user, pk)
+    if not can_upload(req, request.user):
+        raise PermissionDenied
+    form = AttachmentForm(request.POST, request.FILES, prefix="upload")
+    if not form.is_valid():
+        messages.error(request, "Choose a file to upload.")
+        return redirect(req)
+    with transaction.atomic():
+        att = Attachment.objects.create(request=req, kind=form.cleaned_data["kind"], file=form.cleaned_data["file"],
+                                        uploaded_by=request.user)
+        req.events.create(actor=request.user, action="file added", message=f"{att.get_kind_display()}: {att.filename}")
+    messages.success(request, f"{att.get_kind_display()} uploaded.")
+    return redirect(req)
 
 
 @login_required

@@ -53,6 +53,7 @@
         <dd class="col-sm-8 mb-0">
           {% for a in attachments %}<div><a href="{% url 'attachment' a.pk %}">{{ a.filename }}</a> <span class="small text-muted">{{ a.get_kind_display }}</span></div>
           {% empty %}<span class="text-muted">None</span>{% endfor %}
+          {% if missing_quote %}<div><span class="badge text-bg-warning">No quote uploaded yet</span> <span class="small text-muted">needed for £2,000 and over</span></div>{% endif %}
         </dd>
       </dl>
     </div></div>
@@ -76,7 +77,7 @@
 
   <div class="col-lg-5 d-print-none">
     {% if actions %}
-    <div class="card shadow-sm">
+    <div class="card shadow-sm mb-4">
       <div class="card-header bg-white fw-semibold">Actions</div>
       <div class="card-body">
         {% for a in actions %}
@@ -89,6 +90,17 @@
           </form>
         </details>
         {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% if upload_form %}
+    <div class="card shadow-sm" id="upload">
+      <div class="card-header bg-white fw-semibold">Add a file</div>
+      <div class="card-body">
+        <form method="post" action="{% url 'request_upload' req.pk %}" enctype="multipart/form-data">{% csrf_token %}
+          {% with form=upload_form %}{% include 'purchasing/_fields.html' %}{% endwith %}
+          <button class="btn btn-outline-primary">Upload</button>
+        </form>
       </div>
     </div>
     {% endif %}

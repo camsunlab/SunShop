@@ -4,7 +4,7 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 
-from .models import Method, PurchaseRequest
+from .models import Attachment, Method, PurchaseRequest
 from .rules import tier_for
 
 
@@ -17,6 +17,12 @@ class BootstrapMixin:
                 continue
             css = "form-select" if isinstance(widget, forms.Select) else "form-control"
             widget.attrs.setdefault("class", css)
+
+
+class AttachmentForm(BootstrapMixin, forms.Form):
+    """Add a file (e.g. a quote) to any request, including imported history."""
+    kind = forms.ChoiceField(choices=Attachment.Kind.choices, initial=Attachment.Kind.QUOTE, label="Type")
+    file = forms.FileField()
 
 
 class PurchaseRequestForm(BootstrapMixin, forms.ModelForm):

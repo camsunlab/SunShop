@@ -8,3 +8,4 @@ media/
 .secret_key
 staticfiles/
 logs/
+backups/
