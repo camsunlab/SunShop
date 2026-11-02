@@ -7,3 +7,4 @@ SunShop/media/
 .venv/
 SunShop/.secret_key
 SunShop/staticfiles/
+SunShop/logs/

@@ -11,9 +11,11 @@ How the spreadsheet is read ("Lab Purchases" sheet):
   * PR items with no matching PO are imported too, flagged "PR only - no PO found" for checking.
   * "Amazon Order" rows are skipped - they're VAT-inclusive copies of Amazon Business PR items.
   * Amounts are kept as recorded (before VAT).
-  * Grant code = cost centre + fund from the charge account, e.g. U.LJ.LJAG.MAMB.ELCO.0000 -> LJAG.MAMB.
+  * Grant code = the lab's own code from the "Grant Code" column (e.g. LJAM/360). Where that's blank, it falls
+    back to cost centre + fund from the charge account, e.g. U.LJ.LJAG.MAMB.ELCO.0000 -> LJAG.MAMB.
 
-Safe to re-run: purchases already imported (same PO / PR) are skipped.
+Safe to re-run: purchases already imported (same PO / PR) are skipped, but their grant code is updated if the
+spreadsheet's "Grant Code" column now gives a different one.
 """
 import datetime
 import html
@@ -57,6 +59,11 @@ def grant_from_account(account):
     """U.LJ.LJAG.MAMB.ELCO.0000 -> LJAG.MAMB"""
     parts = (account or "").split(".")
     return ".".join(parts[2:4]) if len(parts) >= 4 else ""
+
+
+def lab_code(row):
+    """The lab's own grant code from the "Grant Code" column, if filled in."""
+    return (row.get("Grant Code") or "").strip()
 
 
 def amounts_match(a, b):
@@ -114,14 +121,28 @@ class Command(BaseCommand):
             purchases.append(self.from_po(po, date, supplier, amount, match))
 
         # PR items with no PO. Use the fund of a sibling PO from the same requisition if there is one.
-        pr_grants = {g["pr"]: grant_from_account(g["po"]["Charge Account"]) for g in pr_groups if g["po"]}
+        pr_grants = {g["pr"]: lab_code(g["po"]) or grant_from_account(g["po"]["Charge Account"])
+                     for g in pr_groups if g["po"]}
         for g in pr_groups:
             if g["po"] is None and g["total"] > 0:
                 purchases.append(self.from_pr(g, pr_grants.get(g["pr"])))
 
-        existing = set(PurchaseRequest.objects.exclude(import_key="").values_list("import_key", flat=True))
+        existing = dict(PurchaseRequest.objects.exclude(import_key="").values_list("import_key", "grant_code"))
         new = [p for p in purchases if p["import_key"] not in existing]
-        self.report(purchases, new, skipped, len(existing & {p["import_key"] for p in purchases}))
+        undated = [p for p in new if p["date"].year < 2000]
+        if undated:
+            # Dates that come out as 1970 mean the sheet's Date column has been lost (saved as 0 / epoch).
+            self.stdout.write(self.style.WARNING(
+                f"Not importing {len(undated)} new purchases dated before 2000 - check the spreadsheet's Date column: "
+                + ", ".join(p["import_key"] for p in undated[:10])))
+            new = [p for p in new if p not in undated]
+        regrant = [p for p in purchases if p["import_key"] in existing and p["lab_code"]
+                   and existing[p["import_key"]] != p["grant_code"]]
+        self.report(purchases, new, skipped, len(existing.keys() & {p["import_key"] for p in purchases}))
+        for p in regrant:
+            self.stdout.write(f"    grant code {existing[p['import_key']] or '(none)'} -> {p['grant_code']}  "
+                              f"{p['import_key']}  {p['vendor'][:28]}")
+        self.stdout.write(f"Already-imported purchases getting the lab's grant code: {len(regrant)}")
 
         if dry_run:
             self.stdout.write(self.style.WARNING("Dry run - nothing saved. Run again without --dry-run to import."))
@@ -130,7 +151,9 @@ class Command(BaseCommand):
             user = self.history_user()
             for p in new:
                 self.save(p, user)
-        self.stdout.write(self.style.SUCCESS(f"Imported {len(new)} purchases."))
+            for p in regrant:
+                self.update_grant(p, existing[p["import_key"]])
+        self.stdout.write(self.style.SUCCESS(f"Imported {len(new)} purchases; updated the grant code of {len(regrant)}."))
 
     # ------------------------------------------------------------ building records
 
@@ -150,25 +173,28 @@ class Command(BaseCommand):
             spec = "Item details weren't recorded in the PO email."
         return {
             "import_key": number, "date": date, "item_name": item_name, "spec": spec, "vendor": supplier,
-            "amount": amount, "grant_code": grant_from_account(po["Charge Account"]), "order_reference": number,
+            "amount": amount, "grant_code": lab_code(po) or grant_from_account(po["Charge Account"]),
+            "lab_code": lab_code(po), "order_reference": number,
             "notes": " ".join(notes), "status": Status.RECEIVED,
         }
 
     def from_pr(self, group, sibling_grant):
         item_name, spec = self.describe(group["lines"])
         cost_centre = (group["lines"][0]["Cost Center"] or "").strip()
-        grant = sibling_grant or cost_centre
+        code = next((lab_code(l) for l in group["lines"] if lab_code(l)), "")
+        grant = code or sibling_grant or cost_centre
         notes = [f"PR only – no PO found. Imported from lab_purchases.xlsx (requisition {group['pr']}); "
                  "check whether this was actually ordered."]
         approver = group["lines"][0]["Approved By"]
         if approver:
             notes.append(f"Approved by {approver} (procurement).")
-        if not sibling_grant:
+        if not code and not sibling_grant:
             notes.append(f"Only the cost centre ({cost_centre}) was recorded, not the fund.")
         notes.append("Amounts are as recorded in procurement (before VAT).")
         return {
             "import_key": f"{group['pr']} {group['supplier']}", "date": group["date"], "item_name": item_name,
             "spec": spec, "vendor": group["supplier"], "amount": group["total"], "grant_code": grant,
+            "lab_code": code,
             "order_reference": group["pr"], "notes": " ".join(notes), "status": Status.RECEIVED,
         }
 
@@ -203,6 +229,14 @@ class Command(BaseCommand):
         PurchaseRequest.objects.filter(pk=req.pk).update(created_at=created)
         Event.objects.create(request=req, actor=None, action="imported", message=p["notes"])
         Event.objects.filter(request=req).update(created_at=created)
+
+    def update_grant(self, p, old):
+        req = PurchaseRequest.objects.get(import_key=p["import_key"])
+        req.grant_code = p["grant_code"]
+        req.save(update_fields=["grant_code"])
+        Event.objects.create(request=req, actor=None, action="grant code updated",
+                             message=f"Grant code changed from {old or '(none)'} to {p['grant_code']} "
+                                     "(the lab's code from lab_purchases.xlsx).")
 
     def report(self, purchases, new, skipped, already):
         po = [p for p in purchases if not p["import_key"].startswith("PR-")]

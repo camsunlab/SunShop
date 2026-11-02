@@ -217,11 +217,11 @@ def make_xlsx(path, rows):
 
 class ImportHistoryTests(TestCase):
     HEADER = ["Date", "Email Type", "PR/PO Number", "Description", "Supplier", "Quantity", "Unit Price (GBP)",
-              "Total Amount (GBP)", "Tax (GBP)", "Cost Center", "Charge Account", "Approved By", "Status", "Notes",
-              "Source File"]
+              "Total Amount (GBP)", "Tax (GBP)", "Cost Center", "Charge Account", "Grant Code", "Approved By", "Status",
+              "Notes", "Source File"]
 
-    def row(self, date, kind, number, desc, supplier, total, cost_centre=None, account=None):
-        return [date, kind, number, desc, supplier, "1", total, total, None, cost_centre, account,
+    def row(self, date, kind, number, desc, supplier, total, cost_centre=None, account=None, code=None):
+        return [date, kind, number, desc, supplier, "1", total, total, None, cost_centre, account, code,
                 "MARTIN, Derek", None, None, "x.eml"]
 
     def test_import(self):
@@ -265,3 +265,24 @@ class ImportHistoryTests(TestCase):
         for req in (printer, dell, dobot):  # imported records have no purchaser / actor
             self.assertContains(self.client.get(req.get_absolute_url()), "Imported")
         self.assertContains(self.client.get(reverse("spending")), "Check: PR only")
+
+    def test_lab_grant_codes(self):
+        """The sheet's "Grant Code" column wins over the charge account, also for purchases already imported."""
+        path = tempfile.mktemp(suffix=".xlsx")
+        po = ["46072", "PO Approved", "PO-11", "x", "DELL CORPORATION LTD", "938.68"]
+        pr = ["46073", "PR Approved", "PR-2", "Dobot arm", "RAPID ELECTRONICS LTD", "2553.18", "LJAG"]
+        try:
+            make_xlsx(path, [self.HEADER, self.row(*po, account="U.LJ.LJAG.MAMB.EKMZ.0000"), self.row(*pr)])
+            call_command("import_history", path, stdout=open(os.devnull, "w"))
+            self.assertEqual(PurchaseRequest.objects.get(import_key="PO-11").grant_code, "LJAG.MAMB")
+            make_xlsx(path, [self.HEADER, self.row(*po, account="U.LJ.LJAG.MAMB.EKMZ.0000", code="LJAM/360"),
+                             self.row(*pr, code="LJAM/362"),
+                             self.row("0.04", "PO Approved", "PO-12", "x", "ACME", "5.00", code="LJAM/360")])
+            call_command("import_history", path, stdout=open(os.devnull, "w"))
+        finally:
+            os.remove(path)
+        dell = PurchaseRequest.objects.get(import_key="PO-11")
+        self.assertEqual(dell.grant_code, "LJAM/360")
+        self.assertTrue(dell.events.filter(action="grant code updated").exists())
+        self.assertEqual(PurchaseRequest.objects.get(order_reference="PR-2").grant_code, "LJAM/362")
+        self.assertFalse(PurchaseRequest.objects.filter(import_key="PO-12").exists())  # 1970 date - not imported
