@@ -92,10 +92,6 @@ class ReceivedForm(NoteForm):
     packing_slip = forms.FileField(required=False)
 
 
-class DerekForm(NoteForm):
-    derek_file = forms.FileField(required=False, label="Derek's reply (optional)")
-
-
 class CommentForm(BootstrapMixin, forms.Form):
     message = forms.CharField(widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Ask a question or add detail…"}), label="")
 

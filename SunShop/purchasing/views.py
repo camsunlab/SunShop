@@ -13,7 +13,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from . import workflow
-from .forms import (CommentForm, DerekForm, NoteForm, OrderedForm, PurchaseRequestForm,
+from .forms import (CommentForm, NoteForm, OrderedForm, PurchaseRequestForm,
                     ReceivedForm, SignUpForm)
 from .models import Attachment, OPEN_STATUSES, PurchaseRequest, Status
 from .rules import TIERS
@@ -23,9 +23,6 @@ ACTIONS = {
     "approve": ("Approve", "success", NoteForm, None, None),
     "request_changes": ("Request changes", "warning", NoteForm, None, None),
     "reject": ("Reject", "danger", NoteForm, None, None),
-    "derek_emailed": ("I've emailed Derek", "primary", NoteForm, None, None),
-    "derek_approved": ("Derek approved", "success", DerekForm, "derek_file", Attachment.Kind.DEREK),
-    "derek_declined": ("Derek declined", "danger", DerekForm, "derek_file", Attachment.Kind.DEREK),
     "ordered": ("Mark as ordered", "success", OrderedForm, None, None),
     "received": ("Mark as received", "success", ReceivedForm, "packing_slip", Attachment.Kind.PACKING_SLIP),
     "reimbursed": ("Mark as reimbursed", "success", NoteForm, None, None),
@@ -123,7 +120,6 @@ def request_detail(request, pk):
         "events": req.events.select_related("actor"),
         "attachments": req.attachments.all(),
         "comment_form": comment_form,
-        "derek_mailto": workflow.derek_mailto(req) if req.status == Status.AWAITING_DEREK else None,
     })
 
 
@@ -169,11 +165,10 @@ def purchasing_queue(request):
     return render(request, "purchasing/queue.html", {
         "sections": [
             ("Ready to order", "Approved (or under £200) – place the order.", q.filter(status=Status.TO_ORDER)),
-            ("Awaiting Derek", "£5,000+ approved by the PI – waiting on Derek.", q.filter(status=Status.AWAITING_DEREK)),
             ("Reimbursements to process", "Small purchases paid by the requester.", q.filter(status=Status.AWAITING_REIMBURSEMENT)),
             ("Ordered – awaiting delivery", "", q.filter(status=Status.ORDERED)),
-            ("In discussion (£2,000 – £4,999)", "You're cc'd on these while the PI reviews.",
-             q.filter(status__in=[Status.AWAITING_PI, Status.CHANGES_REQUESTED], tier=3)),
+            ("In discussion (£2,000+)", "You're cc'd on these while the PI reviews.",
+             q.filter(status__in=[Status.AWAITING_PI, Status.CHANGES_REQUESTED], tier__gte=3)),
         ],
     })
 

@@ -1,11 +1,8 @@
-{# Simple step indicator: Submitted → (PI) → (Derek) → Ordered → Received #}
+{# Simple step indicator: Submitted → (PI) → Ordered → Received #}
 <ol class="progress-steps list-unstyled d-flex flex-wrap gap-2 mb-4 small">
   <li class="done">Submitted</li>
   {% if tier.needs_pi %}
   <li class="{% if req.pi_approved %}done{% elif req.status == 'awaiting_pi' or req.status == 'changes_requested' %}current{% endif %}">PI approval</li>
-  {% endif %}
-  {% if tier.needs_derek %}
-  <li class="{% if req.derek_decision_at and req.status != 'rejected' %}done{% elif req.status == 'awaiting_derek' %}current{% endif %}">Derek</li>
   {% endif %}
   {% if req.method == 'purchase_form' %}
   <li class="{% if req.ordered_at %}done{% elif req.status == 'to_order' %}current{% endif %}">Ordered</li>

@@ -33,19 +33,6 @@
     </div>
     {% endif %}
 
-    {% if derek_mailto %}
-    <div class="alert alert-info">
-      <strong>Next step: request the purchase from Derek.</strong>
-      {% if req.derek_emailed_at %}
-        Emailed on {{ req.derek_emailed_at|date:"j M Y" }} – waiting for Derek's reply. The purchaser will record his decision here.
-      {% else %}
-        Shijing has approved this. Email Derek with the purchaser cc'd – the button below opens a pre-filled email
-        (attach the quote), then click <em>I've emailed Derek</em>.
-        <div class="mt-2"><a href="{{ derek_mailto }}" class="btn btn-sm btn-primary">Open email to Derek</a></div>
-      {% endif %}
-    </div>
-    {% endif %}
-
     <div class="card shadow-sm mb-4"><div class="card-body">
       <dl class="row mb-0">
         <dt class="col-sm-4">Total</dt><dd class="col-sm-8 fs-5 fw-semibold">£{{ req.total|floatformat:"2g" }}

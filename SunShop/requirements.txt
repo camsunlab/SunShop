@@ -1,0 +1,4 @@
+Django>=5.2.8,<6
+waitress
+whitenoise
+pymysql

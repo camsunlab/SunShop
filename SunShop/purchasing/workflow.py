@@ -2,8 +2,6 @@
 Request lifecycle. Every status change goes through here so the rules, the audit
 trail and the email notifications stay in one place.
 """
-from urllib.parse import quote
-
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
@@ -59,11 +57,6 @@ def available_actions(req, user):
     actions = []
     if req.status == Status.AWAITING_PI and is_pi(user):
         actions += ["approve", "request_changes", "reject"]
-    if req.status == Status.AWAITING_DEREK:
-        if (mine or is_purchaser(user)) and req.derek_emailed_at is None:
-            actions.append("derek_emailed")
-        if is_purchaser(user):
-            actions += ["derek_approved", "derek_declined"]
     if req.status == Status.TO_ORDER and is_purchaser(user):
         actions.append("ordered")
     if req.status == Status.ORDERED and (mine or is_purchaser(user)):
@@ -126,16 +119,13 @@ def perform(req, user, action, data=None, files=None):
 
     if action == "approve":
         req.pi_decision_by, req.pi_decision_at, req.pi_comment = user, now, note
-        req.status = Status.AWAITING_DEREK if req.tier_info.needs_derek else Status.TO_ORDER
+        req.status = Status.TO_ORDER
         req.save()
         log(req, user, "approved", note)
         notify(req, [req.requester.email], f"Approved: {req.item_name}",
-               f"{user_name(user)} approved your request."
-               + (" Next step: email Derek to request the purchase (link on the request page)."
-                  if req.tier_info.needs_derek else " It's now with the purchaser to order."))
-        if req.status == Status.TO_ORDER:
-            notify(req, purchaser_emails(), f"Ready to order: {req.item_name} (£{req.total:,.2f})",
-                   f"Approved by {user_name(user)}.")
+               f"{user_name(user)} approved your request. It's now with the purchaser to order.")
+        notify(req, purchaser_emails(), f"Ready to order: {req.item_name} (£{req.total:,.2f})",
+               f"Approved by {user_name(user)}.")
 
     elif action in ("request_changes", "reject"):
         if not note:
@@ -146,19 +136,6 @@ def perform(req, user, action, data=None, files=None):
         log(req, user, "changes requested" if action == "request_changes" else "rejected", note)
         notify(req, [req.requester.email], f"{req.get_status_display()}: {req.item_name}",
                f"{user_name(user)}: {note}")
-
-    elif action == "derek_emailed":
-        req.derek_emailed_at = now
-        req.save()
-        log(req, user, "emailed Derek", note)
-
-    elif action in ("derek_approved", "derek_declined"):
-        req.derek_decision_at = now
-        req.status = Status.TO_ORDER if action == "derek_approved" else Status.REJECTED
-        req.save()
-        log(req, user, "Derek approved" if action == "derek_approved" else "Derek declined", note)
-        notify(req, [req.requester.email], f"{'Derek approved' if action == 'derek_approved' else 'Derek declined'}: {req.item_name}",
-               note or "See the request page for details.")
 
     elif action == "ordered":
         req.purchaser = user
@@ -232,33 +209,3 @@ def notify(req, to, subject, body, cc=()):
     # cc'd people are sent the same message; send_mail has no cc argument.
     send_mail(f"[SunShop] {subject}", body, None, to + cc, fail_silently=True)
 
-
-def derek_mailto(req):
-    """Pre-filled email for the requester to send to Derek (purchaser cc'd)."""
-    approval = req.events.filter(action="approved").last()
-    body = "\n".join([
-        "Hi Derek,",
-        "",
-        f"I'd like to request the following purchase, which has been approved by "
-        f"{user_name(req.pi_decision_by) if req.pi_decision_by else 'the PI'}"
-        f"{' on ' + approval.created_at.strftime('%d %b %Y') if approval else ''}.",
-        "",
-        f"Item: {req.item_name}",
-        f"Vendor: {req.vendor}",
-        f"Quantity: {req.quantity}",
-        f"Total: £{req.total:,.2f}",
-        f"Grant code: {req.grant_code}",
-        "",
-        "Spec:",
-        req.spec,
-        "",
-        f"Full details, quote and approval record: {site_url(req)}",
-        "",
-        "Thanks,",
-        user_name(req.requester),
-    ])
-    params = f"subject={quote(f'Purchase request: {req.item_name} (£{req.total:,.2f})')}&body={quote(body)}"
-    cc = ",".join(purchaser_emails())
-    if cc:
-        params = f"cc={quote(cc)}&" + params
-    return f"mailto:{quote(settings.SUNSHOP_DEREK_EMAIL)}?{params}"

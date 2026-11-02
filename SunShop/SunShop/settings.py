@@ -21,12 +21,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-h*9#5+k8q))k%^t&88+8m1go-dtoavt8&9@@hs%*1$^ci*g4g^'
+SECRET_KEY = os.environ.get('SUNSHOP_SECRET_KEY', 'django-insecure-h*9#5+k8q))k%^t&88+8m1go-dtoavt8&9@@hs%*1$^ci*g4g^')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('SUNSHOP_DEBUG', '1') == '1'
 
-ALLOWED_HOSTS = [] #'https://depts.washington.edu/uwsunlab/'
+# Comma-separated, e.g. SUNSHOP_ALLOWED_HOSTS=172.28.52.193,localhost
+ALLOWED_HOSTS = [h for h in os.environ.get('SUNSHOP_ALLOWED_HOSTS', '').split(',') if h]
 
 
 # Application definition
@@ -43,6 +44,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -132,6 +134,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'  # filled by `manage.py collectstatic`, served by whitenoise
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
@@ -152,4 +155,3 @@ DEFAULT_FROM_EMAIL = os.environ.get('SUNSHOP_FROM_EMAIL', 'sunshop@localhost')
 
 # SunShop
 SUNSHOP_SITE_URL = os.environ.get('SUNSHOP_SITE_URL', 'http://127.0.0.1:8000')
-SUNSHOP_DEREK_EMAIL = os.environ.get('SUNSHOP_DEREK_EMAIL', 'derek@example.com')  # TODO: set Derek's real address

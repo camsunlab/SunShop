@@ -7,7 +7,7 @@
         <div class="h5">{{ t.range_label }}</div>
         <ol class="small ps-3 mb-2">{% for s in t.steps %}<li>{{ s }}</li>{% endfor %}</ol>
         <div class="small text-muted">
-          {% if t.needs_pi %}PI approval{% else %}No approval needed{% endif %}{% if t.needs_quote %} · quote required{% endif %}{% if t.needs_derek %} · Derek{% endif %}
+          {% if t.needs_pi %}PI approval{% else %}No approval needed{% endif %}{% if t.needs_quote %} · quote required{% endif %}
         </div>
       </div>
     </div>

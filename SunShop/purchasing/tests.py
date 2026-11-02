@@ -72,15 +72,13 @@ class WorkflowTests(TestCase):
         self.make("3000")
         self.assertEqual(sorted(mail.outbox[0].to), ["clara@lab.ac.uk", "shijing@lab.ac.uk"])
 
-    def test_major_goes_via_derek(self):
+    def test_major_goes_straight_to_purchaser(self):
+        mail.outbox.clear()
         req = self.make("6000")
+        self.assertEqual(sorted(mail.outbox[0].to), ["clara@lab.ac.uk", "shijing@lab.ac.uk"])
         workflow.perform(req, self.pi, "approve")
-        self.assertEqual(req.status, Status.AWAITING_DEREK)
-        self.assertNotIn("ordered", workflow.available_actions(req, self.buyer))
-        self.assertIn("cc=clara%40lab.ac.uk", workflow.derek_mailto(req))
-        workflow.perform(req, self.student, "derek_emailed")
-        workflow.perform(req, self.buyer, "derek_approved")
         self.assertEqual(req.status, Status.TO_ORDER)
+        self.assertIn("ordered", workflow.available_actions(req, self.buyer))
 
     def test_changes_requested_then_resubmit(self):
         req = self.make("500")
@@ -125,7 +123,7 @@ class WorkflowTests(TestCase):
         self.client.force_login(self.pi)
         self.assertEqual(self.client.get(reverse("approvals")).status_code, 200)
         self.client.force_login(self.buyer)
-        self.assertContains(self.client.get(reverse("purchasing_queue")), "Awaiting Derek")
+        self.assertContains(self.client.get(reverse("purchasing_queue")), "Ready to order")
         self.client.force_login(self.student)
         self.assertEqual(self.client.get(reverse("approvals")).status_code, 302)
 
