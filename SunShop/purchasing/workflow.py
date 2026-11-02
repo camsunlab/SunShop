@@ -72,6 +72,8 @@ def available_actions(req, user):
         actions.append("reimbursed")
     if req.is_open and req.status != Status.ORDERED and (mine or is_purchaser(user)):
         actions.append("cancel")
+    elif req.unconfirmed_import and req.status != Status.CANCELLED and is_purchaser(user):
+        actions.append("cancel")  # imported PR that turns out never to have been ordered
     return actions
 
 

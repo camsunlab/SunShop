@@ -1,9 +1,11 @@
+import os
 import shutil
 import tempfile
 from decimal import Decimal
 
 from django.contrib.auth.models import Group, User
 from django.core import mail
+from django.core.management import call_command
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -149,6 +151,39 @@ class WorkflowTests(TestCase):
         req.refresh_from_db()
         self.assertEqual(req.status, Status.TO_ORDER)
 
+    def test_spending_by_year_and_grant(self):
+        a = self.make("100")  # small, ready to order -> committed
+        b = self.make("500")
+        workflow.perform(b, self.pi, "approve")
+        workflow.perform(b, self.buyer, "ordered", {"actual_price": Decimal("450")})  # spent, actual price
+        c = self.make("300")  # awaiting PI -> pending
+        c.grant_code = "g2 "
+        c.save()
+        d = self.make("80")
+        workflow.perform(d, self.student, "cancel")  # not counted
+        old = self.make("50", method=Method.STORE)
+        PurchaseRequest.objects.filter(pk=old.pk).update(created_at=old.created_at.replace(year=2024))
+
+        self.client.force_login(self.pi)
+        resp = self.client.get(reverse("spending"))
+        totals = resp.context["totals"]
+        self.assertEqual((totals["spent"], totals["committed"], totals["pending"], totals["count"]),
+                         (Decimal("450"), Decimal("100"), Decimal("300"), 3))
+        self.assertEqual({row["code"] for row in resp.context["summary"]}, {"G1", "G2"})
+
+        resp = self.client.get(reverse("spending"), {"grant": "G2"})
+        self.assertEqual([r.pk for r in resp.context["purchases"]], [c.pk])
+        resp = self.client.get(reverse("spending"), {"year": "2024"})
+        self.assertEqual([r.pk for r in resp.context["purchases"]], [old.pk])
+        self.assertIn(2024, resp.context["years"])
+
+        csv = self.client.get(reverse("spending"), {"format": "csv"}).content.decode()
+        self.assertIn("Actual price", csv.splitlines()[0])
+        self.assertEqual(len(csv.strip().splitlines()), 4)
+
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get(reverse("spending")).status_code, 302)
+
     def test_action_view(self):
         req = self.make("500")
         self.client.force_login(self.pi)
@@ -156,3 +191,79 @@ class WorkflowTests(TestCase):
         req.refresh_from_db()
         self.assertEqual(req.status, Status.TO_ORDER)
         self.assertEqual(req.pi_comment, "ok")
+
+
+def make_xlsx(path, rows):
+    """Write a minimal one-sheet .xlsx ("Lab Purchases") using inline strings."""
+    import zipfile
+    from xml.sax.saxutils import escape
+
+    def cell(ref, value):
+        if value is None:
+            return ""
+        return f'<c r="{ref}" t="inlineStr"><is><t>{escape(str(value))}</t></is></c>'
+
+    sheet_rows = "".join(
+        f'<row r="{i}">' + "".join(cell(f"{chr(65 + j)}{i}", v) for j, v in enumerate(row)) + "</row>"
+        for i, row in enumerate(rows, start=1))
+    ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' \
+         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("xl/workbook.xml", f'<workbook {ns}><sheets><sheet name="Lab Purchases" sheetId="1" r:id="rId1"/></sheets></workbook>')
+        z.writestr("xl/_rels/workbook.xml.rels",
+                   '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                   '<Relationship Id="rId1" Target="worksheets/sheet1.xml" '
+                   'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"/></Relationships>')
+        z.writestr("xl/worksheets/sheet1.xml", f"<worksheet {ns}><sheetData>{sheet_rows}</sheetData></worksheet>")
+
+
+class ImportHistoryTests(TestCase):
+    HEADER = ["Date", "Email Type", "PR/PO Number", "Description", "Supplier", "Quantity", "Unit Price (GBP)",
+              "Total Amount (GBP)", "Tax (GBP)", "Cost Center", "Charge Account", "Approved By", "Status", "Notes",
+              "Source File"]
+
+    def row(self, date, kind, number, desc, supplier, total, cost_centre=None, account=None):
+        return [date, kind, number, desc, supplier, "1", total, total, None, cost_centre, account,
+                "MARTIN, Derek", None, None, "x.eml"]
+
+    def test_import(self):
+        path = tempfile.mktemp(suffix=".xlsx")
+        make_xlsx(path, [self.HEADER,
+            # PR + matching PO (PO amount includes delivery)
+            self.row("46070", "PR Approved", "PR-1", "[part-id:9] 3D printer", "ADDITIVE X LTD", "1374.17", "LJAA"),
+            self.row("46071", "PO Approved", "PO-10", "C. TAMURA XML", "ADDITIVE X LTD", "1429.17", account="U.LJ.LJAA.AAAD.EKEJ.0000"),
+            # PO with no PR details
+            self.row("46072", "PO Approved", "PO-11", "C. TAMURA XML", "DELL CORPORATION LTD", "938.68", account="U.LJ.LJAG.MAMB.EKMZ.0000"),
+            # PR with no PO
+            self.row("46073", "PR Approved", "PR-2", "Dobot arm", "RAPID ELECTRONICS LTD", "2553.18", "LJAG"),
+            # Amazon duplicate - skipped
+            self.row("46073", "Amazon Order", None, "Gloves", "Amazon", "6.98"),
+        ])
+        try:
+            call_command("import_history", path, "--dry-run", stdout=open(os.devnull, "w"))
+            self.assertEqual(PurchaseRequest.objects.count(), 0)
+            call_command("import_history", path, stdout=open(os.devnull, "w"))
+            call_command("import_history", path, stdout=open(os.devnull, "w"))  # re-run adds nothing
+        finally:
+            os.remove(path)
+
+        self.assertEqual(PurchaseRequest.objects.count(), 3)
+        printer = PurchaseRequest.objects.get(import_key="PO-10")
+        self.assertEqual((printer.item_name, printer.amount, printer.grant_code), ("3D printer", Decimal("1429.17"), "LJAA.AAAD"))
+        self.assertEqual(printer.status, Status.RECEIVED)
+        self.assertEqual(printer.purchase_date.isoformat(), "2026-02-18")  # PO date, not PR date
+        self.assertEqual(printer.created_at.year, 2026)
+        dell = PurchaseRequest.objects.get(import_key="PO-11")
+        self.assertEqual((dell.item_name, dell.grant_code), ("Order from Dell Corporation Ltd", "LJAG.MAMB"))
+        dobot = PurchaseRequest.objects.get(order_reference="PR-2")
+        self.assertTrue(dobot.unconfirmed_import)
+        self.assertEqual(dobot.grant_code, "LJAG")
+
+        buyer = User.objects.create_user("clara", "c@lab.ac.uk", "pw")
+        buyer.groups.add(Group.objects.get(name="Purchaser"))
+        self.assertIn("cancel", workflow.available_actions(dobot, buyer))
+        self.assertNotIn("cancel", workflow.available_actions(dell, buyer))
+        self.client.force_login(buyer)
+        for req in (printer, dell, dobot):  # imported records have no purchaser / actor
+            self.assertContains(self.client.get(req.get_absolute_url()), "Imported")
+        self.assertContains(self.client.get(reverse("spending")), "Check: PR only")

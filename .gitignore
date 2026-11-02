@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
-db.sqlite3
-SunShop/media/
+# db.sqlite3*
+# SunShop/media/
 .DS_Store
+.cusf_emails_all
+lab_purchases.xlsx

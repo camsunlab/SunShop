@@ -1,3 +1,4 @@
+{% load purchasing_extras %}
 {% if requests %}
 <div class="table-responsive">
 <table class="table table-hover align-middle mb-0">
@@ -9,10 +10,10 @@
     <tr>
       <td class="text-muted">{{ r.pk }}</td>
       <td><a href="{{ r.get_absolute_url }}" class="fw-medium text-decoration-none">{{ r.item_name }}</a><div class="small text-muted">{{ r.vendor }}{% if r.grant_code %} · {{ r.grant_code }}{% endif %}</div></td>
-      <td>{{ r.requester.get_full_name|default:r.requester.username }}</td>
+      <td>{{ r.requester|person }}</td>
       <td class="text-end">£{{ r.total|floatformat:"2g" }}{% if r.actual_price is not None and r.actual_price != r.total %}<div class="small text-muted">paid £{{ r.actual_price|floatformat:"2g" }}</div>{% endif %}</td>
       <td><span class="tier tier-{{ r.tier }}">{{ r.tier_info.label }}</span></td>
-      <td><span class="badge text-bg-{{ r.status_colour }}">{{ r.get_status_display }}</span>{% if r.replacement_purchased %} <span class="badge text-bg-warning" title="{{ r.replacement_details }}">Replacement</span>{% endif %}</td>
+      <td><span class="badge text-bg-{{ r.status_colour }}">{{ r.get_status_display }}</span>{% if r.replacement_purchased %} <span class="badge text-bg-warning" title="{{ r.replacement_details }}">Replacement</span>{% endif %}{% if r.unconfirmed_import %} <span class="badge text-bg-light border" title="Imported from an approved requisition with no PO found – check whether it was ordered">Check: PR only</span>{% endif %}</td>
       <td class="small text-muted">{{ r.created_at|date:"j M Y" }}</td>
     </tr>
   {% endfor %}

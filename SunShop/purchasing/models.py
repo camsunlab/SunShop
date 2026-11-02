@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.db import models
 from django.urls import reverse
+from django.utils import timezone
 
 from .rules import get_tier, tier_for
 
@@ -25,6 +26,12 @@ OPEN_STATUSES = (
     Status.AWAITING_PI, Status.CHANGES_REQUESTED, Status.AWAITING_DEREK,
     Status.TO_ORDER, Status.ORDERED, Status.AWAITING_REIMBURSEMENT,
 )
+
+# How each status counts on the Spending page. Rejected / cancelled requests aren't counted.
+SPENT_STATUSES = (Status.ORDERED, Status.RECEIVED, Status.AWAITING_REIMBURSEMENT,
+                  Status.REIMBURSED, Status.BOUGHT_AT_STORE)
+COMMITTED_STATUSES = (Status.TO_ORDER, Status.AWAITING_DEREK)  # approved, not yet bought
+PENDING_STATUSES = (Status.AWAITING_PI, Status.CHANGES_REQUESTED)
 
 STATUS_COLOURS = {
     Status.AWAITING_PI: "warning", Status.CHANGES_REQUESTED: "warning", Status.AWAITING_DEREK: "info",
@@ -83,6 +90,10 @@ class PurchaseRequest(models.Model):
     replacement_purchased = models.BooleanField(default=False)
     replacement_details = models.TextField(blank=True, help_text="What was bought instead, and why")
 
+    # Set on purchases imported from the old spreadsheet: "PO-4318152", or "PR-2912513 <supplier>" for a
+    # requisition with no matching PO. Lets the import be re-run without creating duplicates.
+    import_key = models.CharField(max_length=150, blank=True, db_index=True)
+
     # Receiving
     received_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     received_at = models.DateField(null=True, blank=True)
@@ -117,6 +128,34 @@ class PurchaseRequest(models.Model):
     @property
     def is_open(self):
         return self.status in OPEN_STATUSES
+
+    @property
+    def amount(self):
+        """What this purchase costs the grant: the actual price once known, otherwise the requested total."""
+        return self.actual_price if self.actual_price is not None else self.total
+
+    @property
+    def purchase_date(self):
+        return self.ordered_at or timezone.localdate(self.created_at)
+
+    @property
+    def spending_bucket(self):
+        if self.status in SPENT_STATUSES:
+            return "spent"
+        if self.status in COMMITTED_STATUSES:
+            return "committed"
+        if self.status in PENDING_STATUSES:
+            return "pending"
+        return None
+
+    @property
+    def is_imported(self):
+        return bool(self.import_key)
+
+    @property
+    def unconfirmed_import(self):
+        """Imported from an approved requisition with no PO found - may not have been bought."""
+        return self.import_key.startswith("PR-")
 
     @property
     def pi_approved(self):

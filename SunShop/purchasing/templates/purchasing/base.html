@@ -25,6 +25,9 @@
         {% if is_purchaser %}
         <li class="nav-item"><a class="nav-link" href="{% url 'purchasing_queue' %}">Purchasing {% if nav_purchaser_count %}<span class="badge text-bg-primary">{{ nav_purchaser_count }}</span>{% endif %}</a></li>
         {% endif %}
+        {% if is_pi or is_purchaser or user.is_staff %}
+        <li class="nav-item"><a class="nav-link" href="{% url 'spending' %}">Spending</a></li>
+        {% endif %}
       </ul>
       <ul class="navbar-nav">
         {% if user.is_staff %}

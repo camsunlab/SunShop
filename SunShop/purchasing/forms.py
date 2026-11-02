@@ -42,8 +42,13 @@ class PurchaseRequestForm(BootstrapMixin, forms.ModelForm):
 
     def __init__(self, *args, has_quote=False, has_receipt=False, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["grant_code"].widget.attrs["list"] = "grant-codes"
+        self.grant_codes = sorted({c.strip().upper() for c in PurchaseRequest.objects.values_list("grant_code", flat=True) if c.strip()})
         self.has_quote = has_quote
         self.has_receipt = has_receipt
+
+    def clean_grant_code(self):
+        return self.cleaned_data["grant_code"].strip()
 
     def clean(self):
         data = super().clean()

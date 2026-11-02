@@ -1,10 +1,14 @@
+import csv
+from decimal import Decimal
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
@@ -192,6 +196,66 @@ def all_requests(request):
     return render(request, "purchasing/all_requests.html", {
         "requests": qs, "q": query, "status": status, "tier": tier,
         "statuses": Status.choices, "tiers": TIERS,
+    })
+
+
+def can_see_spending(user):
+    return workflow.is_pi(user) or workflow.is_purchaser(user) or user.is_staff
+
+
+@login_required
+@user_passes_test(can_see_spending)
+def spending(request):
+    """Lab spending by year and grant code, with CSV export."""
+    all_qs = PurchaseRequest.objects.exclude(status__in=[Status.REJECTED, Status.CANCELLED])
+    years = sorted({d.year for d in all_qs.dates("created_at", "year")}
+                   | {d.year for d in all_qs.exclude(ordered_at=None).dates("ordered_at", "year")}, reverse=True)
+    this_year = timezone.localdate().year
+    if this_year not in years:
+        years.insert(0, this_year)
+    grant_codes = sorted({c.strip().upper() for c in all_qs.values_list("grant_code", flat=True) if c.strip()})
+
+    year = request.GET.get("year", str(this_year))
+    grant = request.GET.get("grant", "")
+    qs = all_qs.select_related("requester")
+    if year != "all":
+        year = int(year) if year.isdigit() else this_year
+        # A purchase belongs to the year it was ordered, or the year it was requested if not ordered yet.
+        qs = qs.filter(Q(ordered_at__year=year) | Q(ordered_at=None, created_at__year=year))
+    purchases = sorted(qs, key=lambda r: (r.purchase_date, r.pk), reverse=True)
+    if grant:
+        purchases = [r for r in purchases if r.grant_code.strip().upper() == grant.strip().upper()]
+
+    if request.GET.get("format") == "csv":
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = f'attachment; filename="sunshop-spending-{year}{"-" + grant if grant else ""}.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["Request #", "Date", "Grant code", "Project", "Item", "Vendor", "Requested by", "Quantity",
+                         "Requested total (£)", "Actual price (£)", "Amount (£)", "Counted as", "Status",
+                         "PO / order number", "Replacement purchased", "Replacement details"])
+        for r in purchases:
+            writer.writerow([r.pk, r.purchase_date.isoformat(), r.grant_code, r.project, r.item_name, r.vendor,
+                             r.requester.get_full_name() or r.requester.username, r.quantity, r.total,
+                             "" if r.actual_price is None else r.actual_price, r.amount, r.spending_bucket,
+                             r.get_status_display(), r.order_reference, "Yes" if r.replacement_purchased else "",
+                             r.replacement_details])
+        return response
+
+    zero = Decimal("0.00")
+    by_grant = {}
+    totals = {"count": 0, "spent": zero, "committed": zero, "pending": zero}
+    for r in purchases:
+        code = r.grant_code.strip().upper() or "(no grant code)"
+        row = by_grant.setdefault(code, {"code": code, "count": 0, "spent": zero, "committed": zero, "pending": zero})
+        for target in (row, totals):
+            target["count"] += 1
+            target[r.spending_bucket] += r.amount
+
+    return render(request, "purchasing/spending.html", {
+        "years": years, "year": year, "grant_codes": grant_codes, "grant": grant,
+        "summary": sorted(by_grant.values(), key=lambda row: row["spent"] + row["committed"], reverse=True),
+        "totals": totals, "purchases": purchases,
+        "csv_query": request.GET.urlencode(),
     })
 
 

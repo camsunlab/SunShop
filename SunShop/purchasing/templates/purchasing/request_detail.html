@@ -1,9 +1,10 @@
 {% extends 'purchasing/base.html' %}
+{% load purchasing_extras %}
 {% block title %}#{{ req.pk }} {{ req.item_name }}{% endblock %}
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
   <div>
-    <div class="text-muted small">Request #{{ req.pk }} · submitted {{ req.created_at|date:"j M Y" }} by {{ req.requester.get_full_name|default:req.requester.username }}</div>
+    <div class="text-muted small">Request #{{ req.pk }} · submitted {{ req.created_at|date:"j M Y" }} by {{ req.requester|person }}</div>
     <h1 class="h3 mb-1">{{ req.item_name }}</h1>
     <span class="badge fs-6 text-bg-{{ req.status_colour }}">{{ req.get_status_display }}</span>
     <span class="tier tier-{{ tier.number }} ms-2 fw-semibold">{{ tier.label }} purchase · {{ tier.range_label }}</span>
@@ -19,9 +20,15 @@
 <div class="row g-4">
   <div class="col-lg-7">
 
+    {% if req.unconfirmed_import %}
+    <div class="alert alert-secondary">Imported from an approved requisition with no PO found in the email history. It may not have been ordered – check, then cancel it if it wasn't.</div>
+    {% elif req.is_imported %}
+    <div class="alert alert-secondary small">Imported from the purchase history spreadsheet. Amounts are as recorded in procurement (before VAT).</div>
+    {% endif %}
+
     {% if req.status == 'changes_requested' or req.status == 'rejected' %}
     <div class="alert alert-{% if req.status == 'rejected' %}danger{% else %}warning{% endif %}">
-      <strong>{{ req.pi_decision_by.get_full_name|default:req.pi_decision_by.username }}:</strong> {{ req.pi_comment|linebreaksbr }}
+      <strong>{{ req.pi_decision_by|person }}:</strong> {{ req.pi_comment|linebreaksbr }}
       {% if can_edit %}<div class="mt-2"><a href="{% url 'request_edit' req.pk %}" class="btn btn-sm btn-warning">Edit and resubmit</a></div>{% endif %}
     </div>
     {% endif %}
@@ -50,11 +57,11 @@
         {% if req.needed_by %}<dt class="col-sm-4">Needed by</dt><dd class="col-sm-8">{{ req.needed_by|date:"j M Y" }}</dd>{% endif %}
         <dt class="col-sm-4">Spec</dt><dd class="col-sm-8">{{ req.spec|linebreaksbr }}</dd>
         {% if req.notes %}<dt class="col-sm-4">Notes</dt><dd class="col-sm-8">{{ req.notes|linebreaksbr }}</dd>{% endif %}
-        {% if req.pi_approved %}<dt class="col-sm-4">PI approval</dt><dd class="col-sm-8">✓ {{ req.pi_decision_by.get_full_name|default:req.pi_decision_by.username }}, {{ req.pi_decision_at|date:"j M Y H:i" }}{% if req.pi_comment %}<div class="small text-muted">“{{ req.pi_comment }}”</div>{% endif %}</dd>{% endif %}
-        {% if req.ordered_at %}<dt class="col-sm-4">Ordered</dt><dd class="col-sm-8">{{ req.ordered_at|date:"j M Y" }} by {{ req.purchaser.get_full_name|default:req.purchaser.username }}{% if req.order_reference %} · ref {{ req.order_reference }}{% endif %}</dd>{% endif %}
+        {% if req.pi_approved %}<dt class="col-sm-4">PI approval</dt><dd class="col-sm-8">✓ {{ req.pi_decision_by|person }}, {{ req.pi_decision_at|date:"j M Y H:i" }}{% if req.pi_comment %}<div class="small text-muted">“{{ req.pi_comment }}”</div>{% endif %}</dd>{% endif %}
+        {% if req.ordered_at %}<dt class="col-sm-4">Ordered</dt><dd class="col-sm-8">{{ req.ordered_at|date:"j M Y" }} by {{ req.purchaser|person }}{% if req.order_reference %} · ref {{ req.order_reference }}{% endif %}</dd>{% endif %}
         {% if req.actual_price is not None %}<dt class="col-sm-4">Actual price</dt><dd class="col-sm-8">£{{ req.actual_price|floatformat:"2g" }}{% if req.actual_price != req.total %} <span class="small text-muted">(requested £{{ req.total|floatformat:"2g" }})</span>{% endif %}</dd>{% endif %}
         {% if req.replacement_purchased %}<dt class="col-sm-4">Replacement</dt><dd class="col-sm-8"><span class="badge text-bg-warning">Replacement purchased instead</span><div>{{ req.replacement_details|linebreaksbr }}</div></dd>{% endif %}
-        {% if req.received_at %}<dt class="col-sm-4">Received</dt><dd class="col-sm-8">{{ req.received_at|date:"j M Y" }} by {{ req.received_by.get_full_name|default:req.received_by.username }}</dd>{% endif %}
+        {% if req.received_at %}<dt class="col-sm-4">Received</dt><dd class="col-sm-8">{{ req.received_at|date:"j M Y" }} by {{ req.received_by|person }}</dd>{% endif %}
         <dt class="col-sm-4">Attachments</dt>
         <dd class="col-sm-8 mb-0">
           {% for a in attachments %}<div><a href="{% url 'attachment' a.pk %}">{{ a.filename }}</a> <span class="small text-muted">{{ a.get_kind_display }}</span></div>
@@ -67,7 +74,7 @@
     <ul class="list-unstyled timeline mb-3">
       {% for e in events %}
       <li class="{% if e.action == 'comment' %}comment{% endif %}">
-        <div class="small"><strong>{{ e.actor.get_full_name|default:e.actor.username }}</strong>
+        <div class="small"><strong>{{ e.actor|person }}</strong>
           {% if e.action != 'comment' %}<span class="text-muted">{{ e.action }}</span>{% endif %}
           <span class="text-muted">· {{ e.created_at|date:"j M Y H:i" }}</span></div>
         {% if e.message %}<div>{{ e.message|linebreaksbr }}</div>{% endif %}

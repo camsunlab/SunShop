@@ -1,4 +1,5 @@
 {% extends 'purchasing/base.html' %}
+{% load purchasing_extras %}
 {% block title %}Approvals{% endblock %}
 {% block content %}
 <h1 class="h3 mb-3">Approvals</h1>
@@ -12,7 +13,7 @@
         <div>
           <a href="{{ r.get_absolute_url }}" class="fw-semibold text-decoration-none">#{{ r.pk }} {{ r.item_name }}</a>
           <span class="tier tier-{{ r.tier }} small ms-1">{{ r.tier_info.label }}</span>
-          <div class="small text-muted">{{ r.requester.get_full_name|default:r.requester.username }} · {{ r.vendor }} · {{ r.grant_code }} · {{ r.created_at|timesince }} ago
+          <div class="small text-muted">{{ r.requester|person }} · {{ r.vendor }} · {{ r.grant_code }} · {{ r.created_at|timesince }} ago
             {% if r.attachments.exists %}· 📎 {{ r.attachments.count }}{% endif %}</div>
           <div class="small mt-1">{{ r.spec|truncatewords:30 }}</div>
         </div>
