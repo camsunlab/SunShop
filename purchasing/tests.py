@@ -252,7 +252,7 @@ class ImportHistoryTests(TestCase):
         self.assertEqual(printer.purchase_date.isoformat(), "2026-02-18")  # PO date, not PR date
         self.assertEqual(printer.created_at.year, 2026)
         dell = PurchaseRequest.objects.get(import_key="PO-11")
-        self.assertEqual((dell.item_name, dell.grant_code), ("Order from Dell Corporation Ltd", "LJAG.MAMB"))
+        self.assertEqual((dell.item_name, dell.grant_code), ("Order from Dell Corporation Ltd", "LJAM/360"))
         dobot = PurchaseRequest.objects.get(order_reference="PR-2")
         self.assertTrue(dobot.unconfirmed_import)
         self.assertEqual(dobot.grant_code, "LJAG")
@@ -272,17 +272,44 @@ class ImportHistoryTests(TestCase):
         po = ["46072", "PO Approved", "PO-11", "x", "DELL CORPORATION LTD", "938.68"]
         pr = ["46073", "PR Approved", "PR-2", "Dobot arm", "RAPID ELECTRONICS LTD", "2553.18", "LJAG"]
         try:
-            make_xlsx(path, [self.HEADER, self.row(*po, account="U.LJ.LJAG.MAMB.EKMZ.0000"), self.row(*pr)])
+            make_xlsx(path, [self.HEADER, self.row(*po, account="U.LJ.LJFV.EFYV.EKMZ.0000"), self.row(*pr)])
             call_command("import_history", path, stdout=open(os.devnull, "w"))
-            self.assertEqual(PurchaseRequest.objects.get(import_key="PO-11").grant_code, "LJAG.MAMB")
-            make_xlsx(path, [self.HEADER, self.row(*po, account="U.LJ.LJAG.MAMB.EKMZ.0000", code="LJAM/360"),
+            self.assertEqual(PurchaseRequest.objects.get(import_key="PO-11").grant_code, "LJFV.EFYV")
+            make_xlsx(path, [self.HEADER, self.row(*po, account="U.LJ.LJFV.EFYV.EKMZ.0000", code="LJFV-EFYV"),
                              self.row(*pr, code="LJAM/362"),
                              self.row("0.04", "PO Approved", "PO-12", "x", "ACME", "5.00", code="LJAM/360")])
             call_command("import_history", path, stdout=open(os.devnull, "w"))
         finally:
             os.remove(path)
         dell = PurchaseRequest.objects.get(import_key="PO-11")
-        self.assertEqual(dell.grant_code, "LJAM/360")
+        self.assertEqual(dell.grant_code, "LJFV-EFYV")
         self.assertTrue(dell.events.filter(action="grant code updated").exists())
         self.assertEqual(PurchaseRequest.objects.get(order_reference="PR-2").grant_code, "LJAM/362")
         self.assertFalse(PurchaseRequest.objects.filter(import_key="PO-12").exists())  # 1970 date - not imported
+
+    def test_csv(self):
+        """A CSV export of the sheet works too, with real date strings."""
+        import csv
+        path = tempfile.mktemp(suffix=".csv")
+        with open(path, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(self.HEADER)
+            w.writerow(self.row("2025-11-14 11:13:01", "PO Approved", "PO-11", "x", "DELL CORPORATION LTD", "837.09",
+                                account="U.LJ.LJFV.EFYV.EKMZ.0000", code="LJFV-EFYV"))
+        try:
+            call_command("import_history", path, stdout=open(os.devnull, "w"))
+        finally:
+            os.remove(path)
+        dell = PurchaseRequest.objects.get(import_key="PO-11")
+        self.assertEqual((dell.grant_code, dell.purchase_date.isoformat()), ("LJFV-EFYV", "2025-11-14"))
+
+    def test_known_fund_maps_to_lab_code(self):
+        """A blank Grant Code with a charge account on a known fund gets the lab's code (LJAG.MAMB -> LJAM/360)."""
+        path = tempfile.mktemp(suffix=".xlsx")
+        make_xlsx(path, [self.HEADER, self.row("46072", "PO Approved", "PO-11", "x", "DELL CORPORATION LTD", "938.68",
+                                               account="U.LJ.LJAG.MAMB.EKMZ.0000")])
+        try:
+            call_command("import_history", path, stdout=open(os.devnull, "w"))
+        finally:
+            os.remove(path)
+        self.assertEqual(PurchaseRequest.objects.get(import_key="PO-11").grant_code, "LJAM/360")

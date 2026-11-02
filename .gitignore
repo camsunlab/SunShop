@@ -1,10 +1,10 @@
 __pycache__/
 *.pyc
 db.sqlite3*
-SunShop/media/
+media/
 .DS_Store
 .cusf_emails_all
 .venv/
-SunShop/.secret_key
-SunShop/staticfiles/
-SunShop/logs/
+.secret_key
+staticfiles/
+logs/

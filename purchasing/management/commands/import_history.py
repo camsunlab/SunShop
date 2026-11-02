@@ -1,8 +1,9 @@
 """
-Import the lab's purchase history from lab_purchases.xlsx (the sheet built from procurement emails).
+Import the lab's purchase history from lab_purchases.xlsx (the sheet built from procurement emails),
+or from a CSV export of its "Lab Purchases" sheet.
 
-    python manage.py import_history lab_purchases.xlsx --dry-run   # preview, writes nothing
-    python manage.py import_history lab_purchases.xlsx             # import
+    python manage.py import_history history/lab_purchases.csv --dry-run   # preview, writes nothing
+    python manage.py import_history history/lab_purchases.csv             # import
 
 How the spreadsheet is read ("Lab Purchases" sheet):
   * Each PO row is one purchase: the amount actually ordered, with its charge account.
@@ -12,11 +13,13 @@ How the spreadsheet is read ("Lab Purchases" sheet):
   * "Amazon Order" rows are skipped - they're VAT-inclusive copies of Amazon Business PR items.
   * Amounts are kept as recorded (before VAT).
   * Grant code = the lab's own code from the "Grant Code" column (e.g. LJAM/360). Where that's blank, it falls
-    back to cost centre + fund from the charge account, e.g. U.LJ.LJAG.MAMB.ELCO.0000 -> LJAG.MAMB.
+    back to cost centre + fund from the charge account, e.g. U.LJ.LJAG.MAMB.ELCO.0000 -> LJAG.MAMB, translated to
+    the lab's code where we know it (FUND_CODES, e.g. LJAG.MAMB -> LJAM/360).
 
 Safe to re-run: purchases already imported (same PO / PR) are skipped, but their grant code is updated if the
 spreadsheet's "Grant Code" column now gives a different one.
 """
+import csv
 import datetime
 import html
 import re
@@ -36,8 +39,22 @@ MATCH_DAYS = 3  # a PR and its PO are approved within this many days of each oth
 HISTORY_USERNAME = "history"
 
 
+DATE_FORMATS = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y")
+
+
 def excel_date(value):
-    return (datetime.datetime(1899, 12, 30) + datetime.timedelta(days=float(value))).date()
+    """An Excel serial number (from .xlsx) or a date string (from .csv, e.g. 2025-11-14 11:13:01)."""
+    value = (value or "").strip()
+    try:
+        return (datetime.datetime(1899, 12, 30) + datetime.timedelta(days=float(value))).date()
+    except ValueError:
+        pass
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    raise CommandError(f"Can't read the date {value!r}")
 
 
 def money(value):
@@ -61,9 +78,19 @@ def grant_from_account(account):
     return ".".join(parts[2:4]) if len(parts) >= 4 else ""
 
 
+# Finance fund (cost centre.fund) -> the lab's grant code, for rows whose "Grant Code" cell is blank.
+# Taken from the sheet, where every row with that fund that does have a code uses this one.
+FUND_CODES = {
+    "LJAG.MAMB": "LJAM/360",
+    "LJAG.MADA": "LJAM/362",
+    "LJAG.MAEB": "LJAM/315",
+    "LJAG.MACB": "LJAM/365",
+}
+
+
 def lab_code(row):
     """The lab's own grant code from the "Grant Code" column, if filled in."""
-    return (row.get("Grant Code") or "").strip()
+    return (row.get("Grant Code") or "").strip() or FUND_CODES.get(grant_from_account(row.get("Charge Account")), "")
 
 
 def amounts_match(a, b):
@@ -78,13 +105,7 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true", help="Show what would be imported without saving.")
 
     def handle(self, path, dry_run=False, **options):
-        try:
-            sheets = read(path)
-        except (OSError, KeyError) as e:
-            raise CommandError(f"Couldn't read {path}: {e}")
-        if SHEET not in sheets:
-            raise CommandError(f"No '{SHEET}' sheet in {path}")
-        rows = records(sheets[SHEET])
+        rows = self.load(path)
 
         pos, pr_lines, skipped = [], [], defaultdict(int)
         for row in rows:
@@ -123,6 +144,7 @@ class Command(BaseCommand):
         # PR items with no PO. Use the fund of a sibling PO from the same requisition if there is one.
         pr_grants = {g["pr"]: lab_code(g["po"]) or grant_from_account(g["po"]["Charge Account"])
                      for g in pr_groups if g["po"]}
+        pr_grants = {pr: FUND_CODES.get(code, code) for pr, code in pr_grants.items()}
         for g in pr_groups:
             if g["po"] is None and g["total"] > 0:
                 purchases.append(self.from_pr(g, pr_grants.get(g["pr"])))
@@ -155,6 +177,18 @@ class Command(BaseCommand):
                 self.update_grant(p, existing[p["import_key"]])
         self.stdout.write(self.style.SUCCESS(f"Imported {len(new)} purchases; updated the grant code of {len(regrant)}."))
 
+    def load(self, path):
+        try:
+            if path.lower().endswith(".csv"):
+                with open(path, encoding="utf-8-sig", newline="") as f:
+                    return list(csv.DictReader(f))
+            sheets = read(path)
+        except (OSError, KeyError, UnicodeDecodeError) as e:
+            raise CommandError(f"Couldn't read {path}: {e}")
+        if SHEET not in sheets:
+            raise CommandError(f"No '{SHEET}' sheet in {path}")
+        return records(sheets[SHEET])
+
     # ------------------------------------------------------------ building records
 
     def from_po(self, po, date, supplier, amount, match):
@@ -182,6 +216,8 @@ class Command(BaseCommand):
         item_name, spec = self.describe(group["lines"])
         cost_centre = (group["lines"][0]["Cost Center"] or "").strip()
         code = next((lab_code(l) for l in group["lines"] if lab_code(l)), "")
+        if not code and sibling_grant in FUND_CODES.values():
+            code = sibling_grant
         grant = code or sibling_grant or cost_centre
         notes = [f"PR only – no PO found. Imported from lab_purchases.xlsx (requisition {group['pr']}); "
                  "check whether this was actually ordered."]
