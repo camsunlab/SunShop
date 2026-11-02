@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -37,7 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'SunApp',
+    'purchasing',  # new SunShop (the old SunApp is no longer installed)
 ]
 
 MIDDLEWARE = [
@@ -63,6 +64,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'purchasing.context_processors.roles',
             ],
         },
     },
@@ -74,16 +76,26 @@ WSGI_APPLICATION = 'SunShop.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'sunshoppurchase',
-        'USER': 'root',
-        'PASSWORD': 'helloworld2023',
-        'HOST': 'localhost',
-        'PORT': '3306',
+# SQLite by default. To use MySQL instead, install mysqlclient and set
+# SUNSHOP_DB_ENGINE=mysql plus SUNSHOP_DB_NAME / _USER / _PASSWORD / _HOST / _PORT.
+if os.environ.get("SUNSHOP_DB_ENGINE") == "mysql":
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': os.environ.get('SUNSHOP_DB_NAME', 'sunshoppurchase'),
+            'USER': os.environ.get('SUNSHOP_DB_USER', 'root'),
+            'PASSWORD': os.environ.get('SUNSHOP_DB_PASSWORD', ''),
+            'HOST': os.environ.get('SUNSHOP_DB_HOST', 'localhost'),
+            'PORT': os.environ.get('SUNSHOP_DB_PORT', '3306'),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': os.environ.get('SUNSHOP_SQLITE_PATH', BASE_DIR / 'db.sqlite3'),
+        }
+    }
 
 
 # Password validation
@@ -95,22 +107,21 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 6},
     },
     {
         'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
     },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    # NumericPasswordValidator removed so 6-digit PINs are allowed.
 ]
 
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'en-gb'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Europe/London'
 
 USE_I18N = True
 
@@ -126,3 +137,19 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Uploaded quotes, receipts, packing slips (served only to logged-in users via the app)
+MEDIA_ROOT = BASE_DIR / 'media'
+
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = 'home'
+LOGOUT_REDIRECT_URL = 'login'
+
+# Email notifications. Printed to the console until SMTP is configured, e.g.
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend', EMAIL_HOST = ..., etc.
+EMAIL_BACKEND = os.environ.get('SUNSHOP_EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+DEFAULT_FROM_EMAIL = os.environ.get('SUNSHOP_FROM_EMAIL', 'sunshop@localhost')
+
+# SunShop
+SUNSHOP_SITE_URL = os.environ.get('SUNSHOP_SITE_URL', 'http://127.0.0.1:8000')
+SUNSHOP_DEREK_EMAIL = os.environ.get('SUNSHOP_DEREK_EMAIL', 'derek@example.com')  # TODO: set Derek's real address

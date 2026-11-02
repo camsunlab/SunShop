@@ -1,0 +1,14 @@
+{% extends 'purchasing/base.html' %}
+{% block title %}Purchasing{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Purchasing</h1>
+{% for title, subtitle, requests in sections %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white">
+    <span class="fw-semibold">{{ title }}</span> <span class="badge text-bg-light">{{ requests|length }}</span>
+    {% if subtitle %}<div class="small text-muted">{{ subtitle }}</div>{% endif %}
+  </div>
+  {% include 'purchasing/_request_table.html' %}
+</div>
+{% endfor %}
+{% endblock %}

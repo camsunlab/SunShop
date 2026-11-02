@@ -1,0 +1,14 @@
+{% extends 'purchasing/base.html' %}
+{% block title %}Add user{% endblock %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-md-7 col-lg-5">
+  <h1 class="h3 mb-3">Add a lab member</h1>
+  <div class="card shadow-sm"><div class="card-body">
+    <form method="post">{% csrf_token %}
+      {% include 'purchasing/_fields.html' %}
+      <button class="btn btn-primary">Create account</button>
+    </form>
+  </div></div>
+  <p class="small text-muted mt-3">To make someone the PI or a purchaser, add them to the <strong>PI</strong> or <strong>Purchaser</strong> group in <a href="{% url 'admin:auth_user_changelist' %}">Admin</a>.</p>
+</div></div>
+{% endblock %}

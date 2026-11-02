@@ -1,0 +1,16 @@
+{% extends 'purchasing/base.html' %}
+{% block title %}Requests{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">{% if is_pi or is_purchaser or user.is_staff %}All requests{% else %}My requests{% endif %}</h1>
+<form class="row g-2 mb-3" method="get">
+  <div class="col-md-5"><input class="form-control" name="q" value="{{ q }}" placeholder="Search item, vendor, grant code, person, PO…"></div>
+  <div class="col-6 col-md-3"><select class="form-select" name="status"><option value="">Any status</option>
+    {% for value, label in statuses %}<option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div class="col-6 col-md-2"><select class="form-select" name="tier"><option value="">Any amount</option>
+    {% for t in tiers %}<option value="{{ t.number }}" {% if t.number|stringformat:'s' == tier %}selected{% endif %}>{{ t.range_label }}</option>{% endfor %}</select></div>
+  <div class="col-md-2"><button class="btn btn-outline-primary w-100">Filter</button></div>
+</form>
+<div class="card shadow-sm">
+  {% include 'purchasing/_request_table.html' with empty="No requests match." %}
+</div>
+{% endblock %}

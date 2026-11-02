@@ -1,0 +1,91 @@
+{% extends 'purchasing/base.html' %}
+{% load purchasing_extras %}
+{% block title %}Spending{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 mb-0">Lab spending</h1>
+  <a class="btn btn-outline-secondary" href="?{{ csv_query }}{% if csv_query %}&{% endif %}format=csv">Download CSV</a>
+</div>
+
+<form class="row g-2 mb-4" method="get">
+  <div class="col-6 col-md-3">
+    <label class="form-label small text-muted mb-1" for="year">Year</label>
+    <select class="form-select" name="year" id="year" onchange="this.form.submit()">
+      {% for y in years %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+      <option value="all" {% if year == 'all' %}selected{% endif %}>All years</option>
+    </select>
+  </div>
+  <div class="col-6 col-md-4">
+    <label class="form-label small text-muted mb-1" for="grant">Grant code</label>
+    <select class="form-select" name="grant" id="grant" onchange="this.form.submit()">
+      <option value="">All grant codes</option>
+      {% for g in grant_codes %}<option value="{{ g }}" {% if g == grant %}selected{% endif %}>{{ g }}</option>{% endfor %}
+    </select>
+  </div>
+  <noscript><div class="col-md-2 d-flex align-items-end"><button class="btn btn-primary w-100">Show</button></div></noscript>
+</form>
+
+<div class="row g-3 mb-4">
+  <div class="col-sm-4"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="text-muted small">Spent</div><div class="h3 mb-0">£{{ totals.spent|floatformat:"2g" }}</div>
+    <div class="small text-muted">Ordered, received, bought or reimbursed</div>
+  </div></div></div>
+  <div class="col-sm-4"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="text-muted small">Committed</div><div class="h3 mb-0">£{{ totals.committed|floatformat:"2g" }}</div>
+    <div class="small text-muted">Approved, not yet ordered</div>
+  </div></div></div>
+  <div class="col-sm-4"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="text-muted small">Awaiting approval</div><div class="h3 mb-0">£{{ totals.pending|floatformat:"2g" }}</div>
+    <div class="small text-muted">With the PI, or changes requested</div>
+  </div></div></div>
+</div>
+
+{% if not grant %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold">By grant code</div>
+  {% if summary %}
+  <div class="table-responsive">
+  <table class="table table-hover align-middle mb-0">
+    <thead class="table-light"><tr><th>Grant code</th><th class="text-end">Purchases</th><th class="text-end">Spent</th><th class="text-end">Committed</th><th class="text-end">Awaiting approval</th></tr></thead>
+    <tbody>
+    {% for row in summary %}
+      <tr>
+        <td>{% if row.code == '(no grant code)' %}<span class="text-muted">{{ row.code }}</span>{% else %}<a href="?year={{ year }}&grant={{ row.code|urlencode }}" class="text-decoration-none fw-medium">{{ row.code }}</a>{% endif %}</td>
+        <td class="text-end">{{ row.count }}</td>
+        <td class="text-end">£{{ row.spent|floatformat:"2g" }}</td>
+        <td class="text-end">£{{ row.committed|floatformat:"2g" }}</td>
+        <td class="text-end">£{{ row.pending|floatformat:"2g" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot class="table-light fw-semibold"><tr><td>Total</td><td class="text-end">{{ totals.count }}</td><td class="text-end">£{{ totals.spent|floatformat:"2g" }}</td><td class="text-end">£{{ totals.committed|floatformat:"2g" }}</td><td class="text-end">£{{ totals.pending|floatformat:"2g" }}</td></tr></tfoot>
+  </table>
+  </div>
+  {% else %}<p class="text-muted p-3 mb-0">No purchases for this year.</p>{% endif %}
+</div>
+{% endif %}
+
+<div class="card shadow-sm">
+  <div class="card-header bg-white fw-semibold">Purchases{% if grant %} on {{ grant }}{% endif %} <span class="badge text-bg-light">{{ purchases|length }}</span></div>
+  {% if purchases %}
+  <div class="table-responsive">
+  <table class="table table-hover align-middle mb-0">
+    <thead class="table-light"><tr><th>Date</th><th>Item</th><th>Grant code</th><th>Requested by</th><th class="text-end">Amount</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for r in purchases %}
+      <tr>
+        <td class="small text-muted text-nowrap">{{ r.purchase_date|date:"j M Y" }}</td>
+        <td><a href="{{ r.get_absolute_url }}" class="text-decoration-none fw-medium">#{{ r.pk }} {{ r.item_name }}</a><div class="small text-muted">{{ r.vendor }}{% if r.project %} · {{ r.project }}{% endif %}</div></td>
+        <td class="small">{{ r.grant_code }}</td>
+        <td>{{ r.requester|person }}</td>
+        <td class="text-end">£{{ r.amount|floatformat:"2g" }}{% if r.actual_price is not None and r.actual_price != r.total %}<div class="small text-muted">requested £{{ r.total|floatformat:"2g" }}</div>{% endif %}</td>
+        <td><span class="badge text-bg-{{ r.status_colour }}">{{ r.get_status_display }}</span>{% if r.replacement_purchased %} <span class="badge text-bg-warning" title="{{ r.replacement_details }}">Replacement</span>{% endif %}{% if r.unconfirmed_import %} <span class="badge text-bg-light border" title="Imported from an approved requisition with no PO found – check whether it was ordered">Check: PR only</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="text-muted p-3 mb-0">No purchases match.</p>{% endif %}
+</div>
+<p class="small text-muted mt-3">A purchase counts towards the year it was ordered, or the year it was requested if it hasn't been ordered yet. Amounts use the actual price paid where the purchaser recorded one. Rejected and cancelled requests aren't included.</p>
+{% endblock %}

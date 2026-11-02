@@ -1,0 +1,38 @@
+{% extends 'purchasing/base.html' %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+  <h1 class="h3 mb-0">Hi {{ user.first_name|default:user.username }}</h1>
+  <a href="{% url 'request_new' %}" class="btn btn-primary">+ New purchase request</a>
+</div>
+
+{% if nav_pi_count or nav_purchaser_count %}
+<div class="row g-3 mb-4">
+  {% if is_pi %}
+  <div class="col-sm-6"><a href="{% url 'approvals' %}" class="card shadow-sm text-decoration-none h-100"><div class="card-body">
+    <div class="display-6 fw-semibold">{{ nav_pi_count|default:0 }}</div><div class="text-muted">waiting for your approval</div>
+  </div></a></div>
+  {% endif %}
+  {% if is_purchaser %}
+  <div class="col-sm-6"><a href="{% url 'purchasing_queue' %}" class="card shadow-sm text-decoration-none h-100"><div class="card-body">
+    <div class="display-6 fw-semibold">{{ nav_purchaser_count|default:0 }}</div><div class="text-muted">to order or reimburse</div>
+  </div></a></div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold">My open requests</div>
+  {% include 'purchasing/_request_table.html' with requests=my_open empty="You have no open requests." %}
+</div>
+
+{% if my_recent %}
+<div class="card shadow-sm mb-4">
+  <div class="card-header bg-white fw-semibold">Recently closed</div>
+  {% include 'purchasing/_request_table.html' with requests=my_recent %}
+</div>
+{% endif %}
+
+<h2 class="h5 mt-5 mb-3">How purchasing works</h2>
+{% include 'purchasing/_tiers.html' %}
+{% endblock %}
