@@ -207,3 +207,46 @@ class Event(models.Model):
 
     def __str__(self):
         return f"{self.request_id}: {self.action}"
+
+
+def supplier_key(name):
+    """Lower-case letters and digits only, so "FISHER SCIENTIFIC UK LTD" and "Fisher Scientific" compare."""
+    return "".join(ch for ch in (name or "").lower() if ch.isalnum())
+
+
+class Supplier(models.Model):
+    """A supplier the university lets us buy from (it has a supplier account in procurement)."""
+
+    name = models.CharField(max_length=200, unique=True)
+    aliases = models.TextField(blank=True, help_text="Other names it appears under, e.g. on POs – one per line.")
+    website = models.URLField(blank=True)
+    notes = models.TextField(blank=True, help_text="What we buy there, account details, anything useful.")
+    active = models.BooleanField(default=True, help_text="Untick if we can no longer buy from this supplier.")
+    added_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    added_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def alias_list(self):
+        return [a.strip() for a in self.aliases.splitlines() if a.strip()]
+
+    def matches(self, vendor):
+        """True if a request's free-text vendor is this supplier ("Fisher Scientific UK Ltd" matches "Fisher Scientific")."""
+        key = supplier_key(vendor)
+        if not key:
+            return False
+        for name in [self.name, *self.alias_list]:
+            other = supplier_key(name)
+            if other == key or (other and (key.startswith(other) or other.startswith(key)) and min(len(key), len(other)) >= 3):
+                return True
+        return False
+
+    @classmethod
+    def find(cls, vendor):
+        return next((s for s in cls.objects.filter(active=True) if s.matches(vendor)), None)

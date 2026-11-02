@@ -11,7 +11,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from . import workflow
-from .models import Method, PurchaseRequest, Status
+from .models import Method, PurchaseRequest, Status, Supplier
 from .rules import tier_for
 
 MEDIA = tempfile.mkdtemp()
@@ -115,7 +115,7 @@ class WorkflowTests(TestCase):
 
     def test_quote_required_from_2000(self):
         self.client.force_login(self.student)
-        data = {"item_name": "Laser", "spec": "s", "vendor": "V", "quantity": 1, "unit_price": "2500",
+        data = {"item_name": "Laser", "spec": "s", "vendor": "THORLABS LTD", "quantity": 1, "unit_price": "2500",
                 "shipping": "0", "grant_code": "G", "method": "purchase_form"}
         resp = self.client.post(reverse("request_new"), data)
         self.assertContains(resp, "A quote is required")
@@ -320,6 +320,29 @@ class ImportHistoryTests(TestCase):
         dell = PurchaseRequest.objects.get(import_key="PO-11")
         self.assertEqual((dell.grant_code, dell.purchase_date.isoformat()), ("LJFV-EFYV", "2025-11-14"))
 
+    def test_shifted_descriptions(self):
+        """In a multi-line requisition each description sits one row below its own line (PR-2950565: the IKA
+        stirrers were bought from Wolf for £1,754, the coverslip rack from Merck for £60.10)."""
+        path = tempfile.mktemp(suffix=".xlsx")
+        make_xlsx(path, [self.HEADER,
+            self.row("46198", "PR Approved", "PR-5", "Coverslip rack", "WOLF LABORATORIES LTD", "1754"),
+            self.row("46198", "PR Approved", "PR-5", "IKA stirrer", "MERCK LIFE SCIENCE UK LTD", "60.10"),
+            self.row("46198", "PR Approved", "PR-6", "Breadboard", "THORLABS LTD", "819.17"),
+            self.row("46198", "PR Approved", "PR-6", "Thermal camera", "THORLABS LTD", "51.75"),
+            self.row("46198", "PR Approved", "PR-6", "Reservoir", "APPLETON WOODS LTD", "197.20"),
+            self.row("46198", "PR Approved", "PR-7", "Single item", "ACME", "5.00"),
+        ])
+        try:
+            call_command("import_history", path, stdout=open(os.devnull, "w"))
+        finally:
+            os.remove(path)
+        name = lambda key: PurchaseRequest.objects.get(import_key=key).item_name
+        self.assertEqual(name("PR-5 WOLF LABORATORIES LTD"), "IKA stirrer")
+        self.assertEqual(name("PR-5 MERCK LIFE SCIENCE UK LTD"), "Coverslip rack")
+        self.assertEqual(name("PR-6 THORLABS LTD"), "Reservoir + 1 more")
+        self.assertEqual(name("PR-6 APPLETON WOODS LTD"), "Thermal camera")
+        self.assertEqual(name("PR-7 ACME"), "Single item")
+
     def test_known_fund_maps_to_lab_code(self):
         """A blank Grant Code with a charge account on a known fund gets the lab's code (LJAG.MAMB -> LJAM/360)."""
         path = tempfile.mktemp(suffix=".xlsx")
@@ -330,3 +353,64 @@ class ImportHistoryTests(TestCase):
         finally:
             os.remove(path)
         self.assertEqual(PurchaseRequest.objects.get(import_key="PO-11").grant_code, "LJAM/360")
+
+
+class SupplierTests(TestCase):
+    def setUp(self):
+        self.student = User.objects.create_user("student", "student@lab.ac.uk", "pw")
+        self.buyer = User.objects.create_user("clara", "clara@lab.ac.uk", "pw", first_name="Clara")
+        self.buyer.groups.add(Group.objects.get(name="Purchaser"))
+
+    def request_data(self, vendor, method="purchase_form"):
+        return {"item_name": "Cable", "spec": "s", "vendor": vendor, "quantity": 1, "unit_price": "20",
+                "shipping": "0", "grant_code": "LJAM/360", "method": method}
+
+    def test_seeded_from_procurement_history(self):
+        fisher = Supplier.objects.get(name="Fisher Scientific")
+        self.assertTrue(fisher.matches("FISHER SCIENTIFIC UK LTD"))
+        self.assertTrue(fisher.matches("fisher scientific"))
+        self.assertFalse(fisher.matches("Fishing Supplies"))
+        self.assertEqual(Supplier.find("Amazon EU SARL, UK Branch").name, "Amazon Business")
+
+    def test_purchase_form_must_use_allowed_supplier(self):
+        self.client.force_login(self.student)
+        resp = self.client.post(reverse("request_new"), self.request_data("AliExpress"))
+        self.assertContains(resp, "isn&#x27;t on the allowed supplier list")
+        self.assertFalse(PurchaseRequest.objects.exists())
+        # Store purchases and reimbursements aren't ordered through the university.
+        self.client.post(reverse("request_new"), self.request_data("AliExpress", method="store"))
+        self.assertEqual(PurchaseRequest.objects.count(), 1)
+        self.client.post(reverse("request_new"), self.request_data("RS Components"))
+        self.assertEqual(PurchaseRequest.objects.count(), 2)
+
+    def test_only_purchaser_can_add(self):
+        data = {"new-name": "AliExpress", "new-website": "", "new-aliases": "", "new-notes": "Approved by finance",
+                "new-active": "on"}
+        self.client.force_login(self.student)
+        self.assertContains(self.client.get(reverse("suppliers")), "Fisher Scientific")
+        self.assertEqual(self.client.post(reverse("suppliers"), data).status_code, 403)
+        self.client.force_login(self.buyer)
+        self.client.post(reverse("suppliers"), data)
+        added = Supplier.objects.get(name="AliExpress")
+        self.assertEqual(added.added_by, self.buyer)
+        self.assertContains(self.client.post(reverse("suppliers"), {**data, "new-name": "aliexpress"}), "already on the list")
+        # Now students can order from it.
+        self.client.force_login(self.student)
+        self.client.post(reverse("request_new"), self.request_data("AliExpress"))
+        self.assertEqual(PurchaseRequest.objects.count(), 1)
+        # Retiring a supplier takes it off the list.
+        self.client.force_login(self.buyer)
+        self.client.post(reverse("supplier_edit", args=[added.pk]),
+                         {"name": "AliExpress", "website": "", "aliases": "", "notes": "", })
+        self.assertFalse(Supplier.objects.get(pk=added.pk).active)
+        self.assertNotIn(added, self.client.get(reverse("suppliers")).context["suppliers"])
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get(reverse("supplier_edit", args=[added.pk])).status_code, 302)
+
+    def test_csv(self):
+        self.client.force_login(self.student)
+        resp = self.client.get(reverse("suppliers"), {"format": "csv"})
+        body = resp.content.decode()
+        self.assertEqual(resp["Content-Type"], "text/csv")
+        self.assertIn("Supplier,Other names (as on POs),Website", body)
+        self.assertIn("Thorlabs,THORLABS LTD,https://www.thorlabs.com", body)

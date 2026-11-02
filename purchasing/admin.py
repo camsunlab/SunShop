@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Attachment, Event, PurchaseRequest
+from .models import Attachment, Event, PurchaseRequest, Supplier
 
 
 class AttachmentInline(admin.TabularInline):
@@ -21,3 +21,10 @@ class PurchaseRequestAdmin(admin.ModelAdmin):
     search_fields = ("item_name", "vendor", "grant_code", "project", "order_reference")
     readonly_fields = ("total", "tier")
     inlines = [AttachmentInline, EventInline]
+
+
+@admin.register(Supplier)
+class SupplierAdmin(admin.ModelAdmin):
+    list_display = ("name", "website", "active", "added_by", "added_at")
+    list_filter = ("active",)
+    search_fields = ("name", "aliases", "notes")

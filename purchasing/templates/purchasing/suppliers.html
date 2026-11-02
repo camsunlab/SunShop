@@ -1,0 +1,65 @@
+{% extends 'purchasing/base.html' %}
+{% load purchasing_extras %}
+{% block title %}Suppliers{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+  <h1 class="h3 mb-0">Allowed suppliers</h1>
+  <a class="btn btn-outline-secondary" href="?{% if q %}q={{ q|urlencode }}&{% endif %}{% if show_inactive %}inactive=1&{% endif %}format=csv">Download CSV</a>
+</div>
+<p class="text-muted">The university can only order from suppliers it has an account with. Requests the purchaser orders
+  (purchase form) must use one of these. Buying at the store or paying yourself for reimbursement isn't limited to this list.
+  {% if not editor %}Need a supplier that isn't here? Ask the purchaser.{% endif %}</p>
+
+<div class="row g-4">
+  <div class="{% if editor %}col-lg-8{% else %}col-12{% endif %}">
+    <form class="row g-2 mb-3" method="get">
+      <div class="col"><input class="form-control" name="q" value="{{ q }}" placeholder="Search suppliers…"></div>
+      {% if editor and inactive_count %}
+      <div class="col-auto d-flex align-items-center">
+        <div class="form-check mb-0"><input class="form-check-input" type="checkbox" name="inactive" value="1" id="inactive" {% if show_inactive %}checked{% endif %} onchange="this.form.submit()">
+          <label class="form-check-label small" for="inactive">Show no-longer-allowed ({{ inactive_count }})</label></div>
+      </div>
+      {% endif %}
+      <div class="col-auto"><button class="btn btn-outline-primary">Search</button></div>
+    </form>
+
+    <div class="card shadow-sm">
+      <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light"><tr><th>Supplier</th><th>Notes</th>{% if editor %}<th></th>{% endif %}</tr></thead>
+        <tbody>
+        {% for s in suppliers %}
+          <tr{% if not s.active %} class="text-muted"{% endif %}>
+            <td>
+              {% if s.website %}<a href="{{ s.website }}" target="_blank" rel="noopener" class="fw-medium text-decoration-none">{{ s.name }}</a>{% else %}<span class="fw-medium">{{ s.name }}</span>{% endif %}
+              {% if not s.active %}<span class="badge text-bg-secondary">No longer allowed</span>{% endif %}
+              {% if s.alias_list %}<div class="small text-muted">{{ s.alias_list|join:" · " }}</div>{% endif %}
+            </td>
+            <td class="small">{{ s.notes }}{% if s.added_by %}<div class="text-muted">Added by {{ s.added_by|person }}, {{ s.added_at|date:"j M Y" }}</div>{% endif %}</td>
+            {% if editor %}<td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="{% url 'supplier_edit' s.pk %}">Edit</a></td>{% endif %}
+          </tr>
+        {% empty %}
+          <tr><td colspan="3" class="text-muted">No suppliers match.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+    <div class="small text-muted mt-2">{{ suppliers|length }} supplier{{ suppliers|length|pluralize }}</div>
+  </div>
+
+  {% if editor %}
+  <div class="col-lg-4">
+    <div class="card shadow-sm" id="add">
+      <div class="card-header bg-white fw-semibold">Add an allowed supplier</div>
+      <div class="card-body">
+        <form method="post">{% csrf_token %}
+          {% include 'purchasing/_fields.html' %}
+          <button class="btn btn-primary">Add supplier</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

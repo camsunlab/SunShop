@@ -13,9 +13,9 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from . import workflow
-from .forms import (AttachmentForm, CommentForm, NoteForm, OrderedForm, PurchaseRequestForm,
+from .forms import (AttachmentForm, CommentForm, SupplierForm, NoteForm, OrderedForm, PurchaseRequestForm,
                     ReceivedForm, SignUpForm)
-from .models import Attachment, OPEN_STATUSES, PurchaseRequest, Status
+from .models import Attachment, OPEN_STATUSES, PurchaseRequest, Status, Supplier
 from .rules import TIERS
 
 # action name -> (button label, bootstrap colour, form class, attachment field, attachment kind)
@@ -124,6 +124,7 @@ def request_detail(request, pk):
         "can_edit": workflow.can_edit(req, request.user),
         "events": req.events.select_related("actor"),
         "attachments": req.attachments.all(),
+        "off_list": req.method == "purchase_form" and req.is_open and not Supplier.find(req.vendor),
         "missing_quote": req.tier_info.needs_quote and not req.attachments.filter(kind=Attachment.Kind.QUOTE).exists(),
         "upload_form": AttachmentForm(prefix="upload") if can_upload(req, request.user) else None,
         "comment_form": comment_form,
@@ -285,6 +286,65 @@ def attachment(request, pk):
     if not can_view(att.request, request.user):
         raise PermissionDenied
     return FileResponse(att.file.open("rb"), filename=att.filename)
+
+
+def can_edit_suppliers(user):
+    return workflow.is_purchaser(user) or user.is_staff
+
+
+@login_required
+def suppliers(request):
+    """The suppliers the university lets us order from. Everyone can see it; the purchaser keeps it up to date."""
+    editor = can_edit_suppliers(request.user)
+    form = SupplierForm(request.POST or None, prefix="new") if editor else None
+    if request.method == "POST":
+        if not editor:
+            raise PermissionDenied
+        if form.is_valid():
+            supplier = form.save(commit=False)
+            supplier.added_by = request.user
+            supplier.save()
+            messages.success(request, f"{supplier.name} added to the allowed suppliers.")
+            return redirect("suppliers")
+
+    query = request.GET.get("q", "").strip()
+    show_inactive = editor and request.GET.get("inactive") == "1"
+    qs = Supplier.objects.select_related("added_by")
+    if not show_inactive:
+        qs = qs.filter(active=True)
+    if query:
+        qs = qs.filter(Q(name__icontains=query) | Q(aliases__icontains=query) | Q(notes__icontains=query))
+
+    if request.GET.get("format") == "csv":
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="sunshop-allowed-suppliers.csv"'
+        write_suppliers_csv(response, qs)
+        return response
+    return render(request, "purchasing/suppliers.html", {
+        "suppliers": qs, "q": query, "show_inactive": show_inactive, "editor": editor, "form": form,
+        "inactive_count": Supplier.objects.filter(active=False).count() if editor else 0,
+    })
+
+
+def write_suppliers_csv(out, suppliers):
+    writer = csv.writer(out)
+    writer.writerow(["Supplier", "Other names (as on POs)", "Website", "Notes", "Allowed", "Added by", "Added"])
+    for s in suppliers:
+        writer.writerow([s.name, "; ".join(s.alias_list), s.website, s.notes, "Yes" if s.active else "No",
+                         (s.added_by.get_full_name() or s.added_by.username) if s.added_by else "",
+                         s.added_at.date().isoformat()])
+
+
+@login_required
+@user_passes_test(can_edit_suppliers)
+def supplier_edit(request, pk):
+    supplier = get_object_or_404(Supplier, pk=pk)
+    form = SupplierForm(request.POST or None, instance=supplier)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, f"{supplier.name} updated.")
+        return redirect("suppliers")
+    return render(request, "purchasing/supplier_form.html", {"form": form, "supplier": supplier})
 
 
 @login_required

@@ -37,7 +37,8 @@
       <dl class="row mb-0">
         <dt class="col-sm-4">Total</dt><dd class="col-sm-8 fs-5 fw-semibold">£{{ req.total|floatformat:"2g" }}
           <div class="small text-muted fw-normal">{{ req.quantity }} × £{{ req.unit_price|floatformat:"2g" }}{% if req.shipping %} + £{{ req.shipping|floatformat:"2g" }} shipping/other{% endif %}</div></dd>
-        <dt class="col-sm-4">Vendor</dt><dd class="col-sm-8">{{ req.vendor }}{% if req.purchase_link %} · <a href="{{ req.purchase_link }}" target="_blank" rel="noopener">link</a>{% endif %}</dd>
+        <dt class="col-sm-4">Vendor</dt><dd class="col-sm-8">{{ req.vendor }}{% if req.purchase_link %} · <a href="{{ req.purchase_link }}" target="_blank" rel="noopener">link</a>{% endif %}
+          {% if off_list %}<div><span class="badge text-bg-danger">Not an allowed supplier</span> <a class="small" href="{% url 'suppliers' %}">see the list</a></div>{% endif %}</dd>
         <dt class="col-sm-4">Grant code</dt><dd class="col-sm-8">{{ req.grant_code }}</dd>
         {% if req.project %}<dt class="col-sm-4">Project</dt><dd class="col-sm-8">{{ req.project }}</dd>{% endif %}
         <dt class="col-sm-4">How</dt><dd class="col-sm-8">{{ req.get_method_display }}</dd>

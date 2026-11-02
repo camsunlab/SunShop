@@ -4,7 +4,7 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
 
-from .models import Attachment, Method, PurchaseRequest
+from .models import Attachment, Method, PurchaseRequest, Supplier
 from .rules import tier_for
 
 
@@ -49,6 +49,9 @@ class PurchaseRequestForm(BootstrapMixin, forms.ModelForm):
     def __init__(self, *args, has_quote=False, has_receipt=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["grant_code"].widget.attrs["list"] = "grant-codes"
+        self.fields["vendor"].widget.attrs["list"] = "suppliers"
+        self.fields["vendor"].help_text = "Ordered through the university? It must be an allowed supplier (see the Suppliers tab)."
+        self.suppliers = list(Supplier.objects.filter(active=True).values_list("name", flat=True))
         self.grant_codes = sorted({c.strip().upper() for c in PurchaseRequest.objects.values_list("grant_code", flat=True) if c.strip()})
         self.has_quote = has_quote
         self.has_receipt = has_receipt
@@ -63,11 +66,32 @@ class PurchaseRequestForm(BootstrapMixin, forms.ModelForm):
         tier = tier_for(total)
         if tier.number > 1 and data.get("method") != Method.PURCHASE_FORM:
             data["method"] = Method.PURCHASE_FORM
+        vendor = data.get("vendor")
+        if data.get("method") == Method.PURCHASE_FORM and vendor:
+            supplier = Supplier.find(vendor)
+            if supplier is None:
+                self.add_error("vendor", f"“{vendor}” isn't on the allowed supplier list, so the university can't "
+                                         "order from it. Pick a supplier from the Suppliers tab, or ask the purchaser to add it.")
         if tier.needs_quote and not (data.get("quote") or self.has_quote):
             self.add_error("quote", f"A quote is required for purchases of £2,000 and over (this one is £{total:.2f}).")
         if data.get("method") == Method.REIMBURSEMENT and not (data.get("receipt") or self.has_receipt):
             self.add_error("receipt", "Please attach your receipt for a reimbursement.")
         return data
+
+
+class SupplierForm(BootstrapMixin, forms.ModelForm):
+    class Meta:
+        model = Supplier
+        fields = ("name", "website", "aliases", "notes", "active")
+        widgets = {"aliases": forms.Textarea(attrs={"rows": 2}), "notes": forms.Textarea(attrs={"rows": 2})}
+        labels = {"aliases": "Other names (as on POs)"}
+
+    def clean_name(self):
+        name = self.cleaned_data["name"].strip()
+        clash = Supplier.objects.filter(name__iexact=name).exclude(pk=self.instance.pk).first()
+        if clash:
+            raise forms.ValidationError(f"{clash.name} is already on the list.")
+        return name
 
 
 class NoteForm(BootstrapMixin, forms.Form):

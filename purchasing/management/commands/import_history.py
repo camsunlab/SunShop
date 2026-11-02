@@ -10,6 +10,9 @@ How the spreadsheet is read ("Lab Purchases" sheet):
   * PR rows are the line items of a requisition. They're matched to a PO with the same supplier within a few
     days and a similar amount, and used for the PO's item description.
   * PR items with no matching PO are imported too, flagged "PR only - no PO found" for checking.
+  * In a requisition with several lines, the sheet's Description column is shifted down one row (each line's
+    description is on the row above, and the first one wraps round to the last). Supplier, quantity and prices
+    are on the right row. unshift_descriptions() puts each description back with its own line.
   * "Amazon Order" rows are skipped - they're VAT-inclusive copies of Amazon Business PR items.
   * Amounts are kept as recorded (before VAT).
   * Grant code = the lab's own code from the "Grant Code" column (e.g. LJAM/360). Where that's blank, it falls
@@ -17,7 +20,8 @@ How the spreadsheet is read ("Lab Purchases" sheet):
     the lab's code where we know it (FUND_CODES, e.g. LJAG.MAMB -> LJAM/360).
 
 Safe to re-run: purchases already imported (same PO / PR) are skipped, but their grant code is updated if the
-spreadsheet's "Grant Code" column now gives a different one.
+spreadsheet's "Grant Code" column now gives a different one. With --fix-descriptions, their item name and
+spec are also rewritten from the sheet (used once to repair the shifted descriptions).
 """
 import csv
 import datetime
@@ -93,6 +97,20 @@ def lab_code(row):
     return (row.get("Grant Code") or "").strip() or FUND_CODES.get(grant_from_account(row.get("Charge Account")), "")
 
 
+def unshift_descriptions(rows):
+    """Give each line of a multi-line requisition its own description (see the module docstring)."""
+    emails = defaultdict(list)
+    for row in rows:
+        if (row["Email Type"] or "").strip() == "PR Approved" and row["Description"]:
+            emails[((row["PR/PO Number"] or "").strip(), row.get("Source File") or "")].append(row)
+    for lines in emails.values():
+        if len(lines) > 1:
+            descriptions = [line["Description"] for line in lines]
+            for line, description in zip(lines, descriptions[-1:] + descriptions[:-1]):
+                line["Description"] = description
+    return rows
+
+
 def amounts_match(a, b):
     return abs(a - b) <= max(Decimal("2.00"), b * Decimal("0.10"))
 
@@ -103,9 +121,11 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("path")
         parser.add_argument("--dry-run", action="store_true", help="Show what would be imported without saving.")
+        parser.add_argument("--fix-descriptions", action="store_true",
+                            help="Also rewrite the item name and spec of purchases already imported.")
 
-    def handle(self, path, dry_run=False, **options):
-        rows = self.load(path)
+    def handle(self, path, dry_run=False, fix_descriptions=False, **options):
+        rows = unshift_descriptions(self.load(path))
 
         pos, pr_lines, skipped = [], [], defaultdict(int)
         for row in rows:
@@ -165,6 +185,15 @@ class Command(BaseCommand):
             self.stdout.write(f"    grant code {existing[p['import_key']] or '(none)'} -> {p['grant_code']}  "
                               f"{p['import_key']}  {p['vendor'][:28]}")
         self.stdout.write(f"Already-imported purchases getting the lab's grant code: {len(regrant)}")
+        redescribe = []
+        if fix_descriptions:
+            current = {r.import_key: r for r in PurchaseRequest.objects.exclude(import_key="")}
+            redescribe = [p for p in purchases if p["import_key"] in current
+                          and (current[p["import_key"]].item_name, current[p["import_key"]].spec) != (p["item_name"], p["spec"])]
+            for p in redescribe:
+                self.stdout.write(f"    #{current[p['import_key']].pk} {p['vendor'][:24]:24} {current[p['import_key']].item_name[:45]!r}"
+                                  f" -> {p['item_name'][:60]!r}")
+            self.stdout.write(f"Already-imported purchases getting corrected descriptions: {len(redescribe)}")
 
         if dry_run:
             self.stdout.write(self.style.WARNING("Dry run - nothing saved. Run again without --dry-run to import."))
@@ -175,6 +204,8 @@ class Command(BaseCommand):
                 self.save(p, user)
             for p in regrant:
                 self.update_grant(p, existing[p["import_key"]])
+            for p in redescribe:
+                self.update_description(p)
         self.stdout.write(self.style.SUCCESS(f"Imported {len(new)} purchases; updated the grant code of {len(regrant)}."))
 
     def load(self, path):
@@ -265,6 +296,15 @@ class Command(BaseCommand):
         PurchaseRequest.objects.filter(pk=req.pk).update(created_at=created)
         Event.objects.create(request=req, actor=None, action="imported", message=p["notes"])
         Event.objects.filter(request=req).update(created_at=created)
+
+    def update_description(self, p):
+        req = PurchaseRequest.objects.get(import_key=p["import_key"])
+        old = req.item_name
+        req.item_name, req.spec = p["item_name"], p["spec"]
+        req.save(update_fields=["item_name", "spec"])
+        Event.objects.create(request=req, actor=None, action="corrected",
+                             message=f"Description corrected (was \"{old}\"): the spreadsheet had the item descriptions "
+                                     "of this requisition shifted by one line.")
 
     def update_grant(self, p, old):
         req = PurchaseRequest.objects.get(import_key=p["import_key"])

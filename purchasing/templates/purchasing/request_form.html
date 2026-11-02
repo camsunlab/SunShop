@@ -27,6 +27,7 @@
       <h2 class="h6 text-uppercase text-muted mb-3">Funding</h2>
       <div class="row">
         <div class="col-md-6">{% include 'purchasing/_field.html' with field=form.grant_code %}
+          <datalist id="suppliers">{% for s in form.suppliers %}<option value="{{ s }}">{% endfor %}</datalist>
           <datalist id="grant-codes">{% for g in form.grant_codes %}<option value="{{ g }}">{% endfor %}</datalist></div>
         <div class="col-md-6">{% include 'purchasing/_field.html' with field=form.project %}</div>
       </div>

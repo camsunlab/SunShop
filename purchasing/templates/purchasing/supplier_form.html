@@ -1,0 +1,15 @@
+{% extends 'purchasing/base.html' %}
+{% block title %}Edit {{ supplier.name }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-lg-6">
+  <a href="{% url 'suppliers' %}" class="small text-decoration-none">&larr; Suppliers</a>
+  <h1 class="h3 my-3">Edit {{ supplier.name }}</h1>
+  <div class="card shadow-sm"><div class="card-body">
+    <form method="post">{% csrf_token %}
+      {% include 'purchasing/_fields.html' %}
+      <button class="btn btn-primary">Save</button>
+      <a href="{% url 'suppliers' %}" class="btn btn-link">Cancel</a>
+    </form>
+  </div></div>
+</div></div>
+{% endblock %}
